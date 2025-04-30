@@ -1,0 +1,8 @@
+{
+	"module":"sdk_games",
+	"about":"Game library for Monkey2",
+	"author":"iDkP from GaragePixel",
+	"version":"1.0.0",
+	"support":"https://github.com/GaragePixel",
+	"depends":["monkey, stdlib, sdk_mojo, sdk"]
+}
