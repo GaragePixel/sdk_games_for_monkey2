@@ -469,3 +469,84 @@ Class StoryState
 		_isComplete = complete
 	End
 End
+'-------------------------------------------------
+' StoryLink Class for Managing Story Transitions
+'-------------------------------------------------
+Class StoryLink
+	
+	Private
+		Field _globalState:JsonObject
+		Field _runtime:InkRuntime
+		
+	Public
+		Method New(runtime:InkRuntime)
+			_runtime = runtime
+			_globalState = New JsonObject()
+		End
+		
+		' Extract global variables from current story
+		Method CaptureGlobalState()
+			Local variables:StringMap<JsonValue> = _runtime.GetAllVariables()
+			_globalState = New JsonObject()
+			
+			For Local key:String = Eachin variables.Keys
+				' Only capture variables marked as global in Ink
+				If key.StartsWith("GLOBAL.")
+					_globalState[key] = variables[key]
+				End
+			Next
+		End
+		
+		' Apply captured variables to a newly loaded story
+		Method ApplyGlobalState()
+			For Local i:Int = 0 Until _globalState.Count
+				Local key:String = GetSafeJsonKey(_globalState, i)
+				
+				If key <> ""
+					_runtime.SetVariable(key, _globalState[key])
+				End
+			Next
+		End
+		
+		' Transition to a new story while preserving state
+		Method TransitionToStory(storyJson:JsonObject)
+			' First capture current globals
+			CaptureGlobalState()
+			
+			' Load the new story
+			_runtime.LoadStory(storyJson)
+			
+			' Apply captured globals to new story
+			ApplyGlobalState()
+		End
+		
+		' Helper method for safely getting keys from a JsonObject
+		Method GetSafeJsonKey:String(json:JsonObject, index:Int)
+			If json = Null Or index < 0 Or index >= json.Count Then Return ""
+			
+			' Extract via string parsing since direct key access isn't available
+			Local jsonStr:String = json.ToString()
+			' Remove outer braces
+			jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
+			
+			If jsonStr.Length = 0 Then Return ""
+			
+			Local pairs:String[] = jsonStr.Split(",")
+			If index >= pairs.Length Then Return ""
+			
+			Local pair:String = pairs[index]
+			Local keyValue:String[] = pair.Split(":")
+			
+			If keyValue.Length < 2 Then Return ""
+			
+			' Extract and clean key (remove quotes)
+			Local key:String = keyValue[0].Trim()
+			If key.StartsWith("~q") And key.EndsWith("~q")
+				key = key.Slice(2, key.Length-2)
+			Elseif key.StartsWith("\") And key.EndsWith("\")
+				key = key.Slice(1, key.Length-1)
+			End
+			
+			Return key
+		End
+End
