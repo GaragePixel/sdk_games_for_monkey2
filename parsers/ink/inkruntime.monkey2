@@ -23,7 +23,7 @@
 ' Technical Advantages:
 '
 ' - Modular design for easy integration with other components.
-' - Uses stdlib for JSON parsing and time management.
+' - Uses stdlib for JSON parsing and data management.
 '
 Namespace sdk_games.parsers.ink
 
@@ -31,7 +31,6 @@ Namespace sdk_games.parsers.ink
 
 Using stdlib.io.json
 Using stdlib.collections
-Using stdlib.system.time
 
 '-------------------------------------------------
 ' InkRuntime Class Definition
@@ -41,35 +40,58 @@ Class InkRuntime
 	Private
 	
 	Field _storyState:StoryState
-	Field _variables:StringMap<InkValue>
-	Field _contentContainer:Container
+	Field _variables:StringMap<JsonValue>
+	Field _contentContainer:JsonArray
 	Field _outputText:String
-	Field _choices:List<Choice>
+	Field _choices:Stack<JsonObject>
+	Field _contentIndex:Int
+		
+	' Content type constants
+	Const CONTENT_TEXT:Int = 0
+	Const CONTENT_CHOICE:Int = 1
+	Const CONTENT_DIVERT:Int = 2
+	Const CONTENT_VARIABLE:Int = 3
+	Const CONTENT_CONDITIONAL:Int = 4
 
 	Public
-	
+
 	Method New()
 		' Initialize the runtime state
 		_storyState = New StoryState()
-		_variables = New StringMap<InkValue>()
-		_contentContainer = Null
+		_variables = New StringMap<JsonValue>()
+		_contentContainer = New JsonArray()
 		_outputText = ""
-		_choices = New List<Choice>()
+		_choices = New Stack<JsonObject>()
+		_contentIndex = 0
 	End
 
-	Method LoadStory(json:JsonValue)
+	Method LoadStory(json:JsonObject)
 		' Load the story's JSON data into the runtime
 		If json = Null
 			RuntimeError("Story JSON data cannot be Null")
 		End
 
-		_storyState.Load(json["state"]) 'FIXME
-		_contentContainer = Container.FromJson(json["mainContentContainer"]) 'FIXME
-		_variables.Clear()
-		Local varsJson:JsonObject = json["variables"]
-		For Local key:String = Eachin varsJson.Keys() 'FIXME (not AtEnd property)
-			_variables[key] = InkValue.FromJson(varsJson[key])
+		_storyState.Load(json["state"])
+			
+		' Load main content container
+		If json.Contains("mainContentContainer")
+			If json["mainContentContainer"].IsArray
+				_contentContainer = Cast<JsonArray>(json["mainContentContainer"])
+			End
 		End
+			
+		' Load variables
+		_variables.Clear()
+		If json.Contains("variables")
+			If json["variables"].IsObject
+				Local vars:JsonObject = Cast<JsonObject>(json["variables"])
+				' Since we can't directly iterate JSON objects, we'll check known keys
+				' This is a workaround since the JSON library doesn't provide direct iteration
+				ExtractKeysFromObject(vars, _variables)
+			End
+		End
+			
+		_contentIndex = 0
 	End
 
 	Method AdvanceStory:String()
@@ -81,37 +103,217 @@ Class InkRuntime
 		_outputText = ""
 		_choices.Clear()
 
-		While Not _storyState.IsComplete()
-			Local nextContent:Content = _contentContainer.NextContent(_storyState) 'FIXME
-			If nextContent = Null Exit
-
-			Select nextContent.Type 'FIXME
-				Case ContentType.Text
-					_outputText += nextContent.Text
-				Case ContentType.Choice
-					_choices.Add(New Choice(nextContent))
-				Default
-					RuntimeError("Unsupported content type: " + String(nextContent.Type))
+		While Not _storyState.IsComplete() And _contentIndex < _contentContainer.Length
+			Local nextContent:JsonValue = _contentContainer[_contentIndex]
+			_contentIndex += 1
+				
+			If nextContent = Null Then Exit
+				
+			Local contentType:Int = ProcessContent(nextContent)
+				
+			If contentType = CONTENT_CHOICE
+				' Stop advancing when we encounter choices
+				Exit
 			End
 		Wend
 
 		Return _outputText
 	End
 
-	Method GetChoices:List<Choice>()
+	Method GetChoices:Stack<JsonObject>()
 		' Return the available choices for the current point in the story
 		Return _choices
 	End
 
 	Method Choose(index:Int)
 		' Select a choice and progress the story
-		If index < 0 Or index >= _choices.Length 'FIXME
+		If index < 0 Or index >= _choices.Length
 			RuntimeError("Invalid choice index: " + String(index))
 		End
 
-		_storyState.ApplyChoice(_choices[index]) 'FIXME
+		' Get the target position from the choice
+		Local choice:JsonObject = _choices[index]
+		Local targetPos:Int = 0
+			
+		If choice.Contains("targetPosition")
+			targetPos = Int(choice["targetPosition"].ToNumber())
+		End
+			
+		' Update the story state
+		_storyState.SetCurrentPosition(targetPos)
+		_contentIndex = targetPos
+			
+		' Clear choices after selection
+		_choices.Clear()
+	End
+		
+	Method GetVariable:JsonValue(name:String, defaultValue:JsonValue = Null)
+		' Get a variable value by name
+		If _variables.Contains(name)
+			Return _variables[name]
+		End
+		Return defaultValue
+	End
+		
+	Method SetVariable(name:String, value:JsonValue)
+		' Set a variable value
+		_variables[name] = value
 	End
 
+	Private
+	
+	' Helper method to extract keys from JSON object into a StringMap
+	Method ExtractKeysFromObject(obj:JsonObject, map:StringMap<JsonValue>)
+		' Get its string representation (hack but works)
+		Local objStr:String = obj.ToString()
+		' Remove outer braces
+		objStr = objStr.Slice(1, objStr.Length-1)
+			
+		' If empty object, return
+		If objStr.Length = 0 Then Return
+			
+		' Split by commas (this is a simple approach that works for basic JSON)
+		Local pairs:String[] = objStr.Split(",")
+		For Local pair:String = Eachin pairs
+			Local keyValue:String[] = pair.Split(":")
+			If keyValue.Length >= 2
+				' Extract key (remove quotes)
+				Local key:String = keyValue[0].Trim()
+				key = key.Slice(1, key.Length-1)  ' Remove quotes
+					
+				' If the JSON object has this key, add it to the map
+				If obj.Contains(key)
+					map[key] = obj[key]
+				End
+			End
+		Next
+	End
+		
+	Method ProcessContent:Int(content:JsonValue)
+		' Process a content item and determine its type
+		If content = Null Then Return -1
+			
+		' If it's not an object, treat as plain text
+		If Not content.IsObject
+			_outputText += content.ToString()
+			Return CONTENT_TEXT
+		End
+			
+		' Process as content object
+		Local contentObj:JsonObject = Cast<JsonObject>(content)
+			
+		' Check content type
+		If contentObj.Contains("type")
+			Local typeStr:String = contentObj["type"].ToString()
+			Local typeInt:Int = Int(typeStr)
+				
+			Select typeInt
+				Case CONTENT_TEXT
+					If contentObj.Contains("text")
+						_outputText += contentObj["text"].ToString()
+					End
+					Return CONTENT_TEXT
+						
+				Case CONTENT_CHOICE
+					' Add to available choices
+					_choices.Push(contentObj)
+					Return CONTENT_CHOICE
+						
+				Case CONTENT_DIVERT
+					' Handle divert
+					If contentObj.Contains("target")
+						Local targetStr:String = contentObj["target"].ToString()
+						Local targetPos:Int = Int(targetStr)
+						_contentIndex = targetPos
+					End
+					Return CONTENT_DIVERT
+						
+				Case CONTENT_VARIABLE
+					' Process variable reference
+					If contentObj.Contains("name")
+						Local varName:String = contentObj["name"].ToString()
+						If _variables.Contains(varName)
+							_outputText += _variables[varName].ToString()
+						End
+					End
+					Return CONTENT_VARIABLE
+						
+				Case CONTENT_CONDITIONAL
+					' Handle conditional logic
+					If contentObj.Contains("condition") And contentObj.Contains("content")
+						If EvaluateCondition(contentObj["condition"])
+							' Process conditional content
+							ProcessContent(contentObj["content"])
+						Elseif contentObj.Contains("else")
+							' Process else content
+							ProcessContent(contentObj["else"])
+						End
+					End
+					Return CONTENT_CONDITIONAL
+						
+				Default
+					RuntimeError("Unsupported content type: " + String(typeInt))
+			End
+		End
+			
+		Return -1
+	End
+		
+	Method EvaluateCondition:Bool(condition:JsonValue)
+		' Evaluate a condition expression
+		If condition = Null Then Return False
+			
+		If condition.IsObject
+			Local conditionObj:JsonObject = Cast<JsonObject>(condition)
+				
+			If conditionObj.Contains("variable") And conditionObj.Contains("value")
+				Local variableName:String = conditionObj["variable"].ToString()
+				Local expectedValue:JsonValue = conditionObj["value"]
+				
+				If _variables.Contains(variableName)
+					Local actualValue:JsonValue = _variables[variableName]
+					Return CompareJsonValues(actualValue, expectedValue)
+				End
+			Elseif conditionObj.Contains("op")
+				' Handle logical operations
+				Local operation:String = conditionObj["op"].ToString()
+				
+				Select operation
+					Case "and"
+						If conditionObj.Contains("left") And conditionObj.Contains("right")
+							Return EvaluateCondition(conditionObj["left"]) And EvaluateCondition(conditionObj["right"])
+						End
+					Case "or"
+						If conditionObj.Contains("left") And conditionObj.Contains("right")
+							Return EvaluateCondition(conditionObj["left"]) Or EvaluateCondition(conditionObj["right"])
+						End
+					Case "not"
+						If conditionObj.Contains("value")
+							Return Not EvaluateCondition(conditionObj["value"])
+						End
+				End
+			End
+		Elseif condition.IsBool
+			Return condition.ToBool()
+		End
+			
+		Return False
+	End
+		
+	Method CompareJsonValues:Bool(value1:JsonValue, value2:JsonValue)
+		' Compare two JSON values for equality
+		If value1 = Null Or value2 = Null Then Return False
+			
+		If value1.IsString And value2.IsString
+			Return value1.ToString() = value2.ToString()
+		Elseif value1.IsNumber And value2.IsNumber
+			Return value1.ToNumber() = value2.ToNumber()
+		Elseif value1.IsBool And value2.IsBool
+			Return value1.ToBool() = value2.ToBool()
+		End
+			
+		Return False
+	End
 End
 
 '-------------------------------------------------
@@ -121,145 +323,149 @@ Class StoryState
 
 	Private
 	
-	Field _variables:StringMap<InkValue>
+	Field _variables:StringMap<JsonValue>
 	Field _currentPosition:Int
+	Field _callStack:Stack<Int>
+	Field _isComplete:Bool
 
 	Public
 	
 	Method New()
-		_variables = New StringMap<InkValue>()
+		_variables = New StringMap<JsonValue>()
 		_currentPosition = 0
+		_callStack = New Stack<Int>()
+		_isComplete = False
 	End
 
-	Method Load(stateJson:JsonValue)
+	Method Load(stateValue:JsonValue)
 		' Load story state from JSON
-		_currentPosition = stateJson["currentPosition"] 'FIXME
-		_variables.Clear()
-		Local varsJson:JsonObject = stateJson["variables"] 'FIXME
-		For Local key:String = Eachin varsJson.Keys() 'FIXME
-			_variables[key] = InkValue.FromJson(varsJson[key])
+		If stateValue = Null Or Not stateValue.IsObject Then Return
+			
+		Local state:JsonObject = Cast<JsonObject>(stateValue)
+			
+		If state.Contains("currentPosition")
+			_currentPosition = Int(state["currentPosition"].ToNumber())
 		End
+			
+		_variables.Clear()
+		If state.Contains("variables")
+			If state["variables"].IsObject
+				Local variables:JsonObject = Cast<JsonObject>(state["variables"])
+					
+				' Extract variables using a helper method (since JSON doesn't provide direct iteration)
+				ExtractKeysFromObject(variables, _variables)
+			End
+		End
+			
+		_callStack.Clear()
+		If state.Contains("callStack")
+			If state["callStack"].IsArray
+				Local callstack:JsonArray = Cast<JsonArray>(state["callStack"])
+				For Local i:Int = 0 Until callstack.Length
+					_callStack.Push(Int(callstack[i].ToNumber()))
+				Next
+			End
+		End
+			
+		If state.Contains("isComplete")
+			_isComplete = state["isComplete"].ToBool()
+		Else
+			_isComplete = False
+		End
+	End
+		
+	' Helper method to extract keys from JSON object into a StringMap
+	Method ExtractKeysFromObject(obj:JsonObject, map:StringMap<JsonValue>)
+		' Get its string representation (hack but works)
+		Local objStr:String = obj.ToString()
+		' Remove outer braces
+		objStr = objStr.Slice(1, objStr.Length-1)
+			
+		' If empty object, return
+		If objStr.Length = 0 Then Return
+			
+		' Split by commas (this is a simple approach that works for basic JSON)
+		Local pairs:String[] = objStr.Split(",")
+		For Local pair:String = Eachin pairs
+			Local keyValue:String[] = pair.Split(":")
+			If keyValue.Length >= 2
+				' Extract key (remove quotes)
+				Local key:String = keyValue[0].Trim()
+				key = key.Slice(1, key.Length-1)  ' Remove quotes
+					
+				' If the JSON object has this key, add it to the map
+				If obj.Contains(key)
+					map[key] = obj[key]
+				End
+			End
+		Next
 	End
 
 	Method Save:JsonObject()
 		' Save story state to JSON
 		Local state:JsonObject = New JsonObject()
-		state["currentPosition"] = _currentPosition 'FIXME
+		state["currentPosition"] = New JsonNumber(_currentPosition)
+			
 		Local vars:JsonObject = New JsonObject()
-		For Local key:String = Eachin _variables.Keys() 'FIXME
-			vars[key] = _variables[key].ToJson()
-		End
+		For Local key:String = Eachin _variables.Keys
+			vars[key] = _variables[key]
+		Next
 		state["variables"] = vars
+			
+		Local stackArr:JsonArray = New JsonArray()
+		For Local pos:Int = Eachin _callStack
+			stackArr.Add(New JsonNumber(pos))
+		Next
+		state["callStack"] = stackArr
+			
+		state["isComplete"] = New JsonBool(_isComplete)
+			
 		Return state
 	End
 
 	Method IsComplete:Bool()
 		' Check if the story has reached its end
-		Return _currentPosition = -1
+		Return _isComplete
 	End
 
-	Method ApplyChoice(choice:Choice)
-		' Apply a choice to progress the story
-		_currentPosition = choice.TargetPosition
+	Method SetCurrentPosition(pos:Int)
+		' Set the current position in the story
+		_currentPosition = pos
 	End
-
-End
-
-'-------------------------------------------------
-' Container Class Definition
-'-------------------------------------------------
-Class Container
-
-	Private
-
-	Field _content:List<JsonValue>
-
-	Public
-
-	Method New()
-		_content = New List<JsonValue>()
+		
+	Method GetCurrentPosition:Int()
+		' Get the current position in the story
+		Return _currentPosition
 	End
-
-	Method FromJson:Container(contentJson:JsonValue)
-		' Create a container from JSON data
-		Local container:Container = New Container()
-		For Local item:JsonValue = Eachin contentJson 'FIXME
-			container._content.Add(Content.FromJson(item))
+		
+	Method PushCallStack(pos:Int)
+		' Push a position onto the call stack
+		_callStack.Push(pos)
+	End
+		
+	Method PopCallStack:Int()
+		' Pop a position from the call stack
+		If _callStack.Length > 0
+			Return _callStack.Pop()
 		End
-		Return container
+		Return -1
 	End
-
-	Method NextContent:JsonValue(state:StoryState)
-		' Get the next content based on the current state
-		If state.IsComplete() Or state._currentPosition >= _content.Length 'FIXME
-			Return Null
+		
+	Method SetVariable(name:String, value:JsonValue)
+		' Set a variable in the story state
+		_variables[name] = value
+	End
+		
+	Method GetVariable:JsonValue(name:String, defaultValue:JsonValue = Null)
+		' Get a variable from the story state
+		If _variables.Contains(name)
+			Return _variables[name]
 		End
-		Local nextstep:JsonValue = _content[state._currentPosition] 'FIXME
-		state._currentPosition += 1
-		Return nextstep 'FIXME
+		Return defaultValue
 	End
-End
-
-'-------------------------------------------------
-' Choice Class Definition
-'-------------------------------------------------
-Class Choice
-
-	Private
 	
-	Field _text:String
-	Field _targetPosition:Int
-
-	Public
-
-	Method New(content:JsonValue)
-		' Initialize a choice from content
-		_text = content.ToString()
-		_targetPosition = JsonValue.TargetPosition 'FIXME
-	End
-
-	Operator To:String()
-		' Return the choice text
-		Return _text
-	End
-
-	Property TargetPosition:Int()
-		Return _targetPosition
-	End
-End
-
-'-------------------------------------------------
-' InkValue Class Definition
-'-------------------------------------------------
-Class InkValue
-
-	Private
-	
-	Field _value:Variant
-
-	Public
-	
-	Method New(value:Variant)
-		' Initialize with a generic value
-		_value = value
-	End
-
-	Method FromJson:InkValue(json:JsonValue)
-		' Convert JSON to InkValue
-		Return New InkValue(json)
-	End
-
-	Method ToJson:JsonValue()
-		' Convert InkValue to JSON
-		Return Cast<JsonValue>(_value)
-	End
-
-	Operator To:String()
-		' Return the value as a string
-		Return String(_value)
-	End
-
-	Property Value:Variant()
-		Return _value
+	Method SetComplete(complete:Bool)
+		' Mark the story as complete or incomplete
+		_isComplete = complete
 	End
 End
