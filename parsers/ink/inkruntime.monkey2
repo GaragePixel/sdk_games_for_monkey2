@@ -510,6 +510,21 @@ End
 '-------------------------------------------------
 ' StoryLink Class for Managing Story Transitions
 '-------------------------------------------------
+' StoryLink facilitates the transition between multiple Ink story files while
+' maintaining narrative continuity through variable persistence. Unlike full
+' streaming, this approach keeps memory consumption efficient by only storing
+' essential global state (variables with "GLOBAL." prefix).
+'
+' When a player completes a story segment and needs to move to another file,
+' StoryLink extracts all global variables, creates a temporary in-memory
+' representation, loads the new story file, and applies the preserved variables
+' to the fresh instance. This allows for multi-episode narratives without
+' requiring custom modifications to the Ink compiler.
+'
+' The JSON extensions handle the technical challenge of safely extracting
+' key-value pairs from JSON objects despite stdlib limitations, ensuring
+' reliable operation across story transitions.
+
 Class StoryLink
 	
 	Private
