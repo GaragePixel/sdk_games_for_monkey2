@@ -524,32 +524,13 @@ Class StoryLink
 		
 		' Extract global variables from current story
 		Method CaptureGlobalState()
-			' We need to access variables directly or update InkRuntime to expose them
-			Local tempVars:StringMap<JsonValue> = New StringMap<JsonValue>()
-			
-			' Direct access to variables using existing methods
-			' For now, we'll capture specific global variables that we know exist
-			' To make this fully functional, add GetAllVariables method to InkRuntime
-			
-			' For demonstration - to be replaced with proper implementation
-			' Sample code to populate with some expected globals
-			
-			' Get known global variables by their likely names
-			Local knownGlobals:=New String[]("GLOBAL.health", "GLOBAL.score", "GLOBAL.inventory")
-			
-			For Local globalKey:String = Eachin knownGlobals
-				Local value:JsonValue = _runtime.GetVariable(globalKey)
-				If value <> Null
-					tempVars[globalKey] = value
-				End
-			Next
-			
+			Local variables:StringMap<JsonValue> = _runtime.GetAllVariables()
 			_globalState = New JsonObject()
 			
-			For Local key:String = Eachin tempVars.Keys
+			For Local key:String = Eachin variables.Keys
 				' Only capture variables marked as global in Ink
 				If key.StartsWith("GLOBAL.")
-					_globalState[key] = tempVars[key]
+					_globalState[key] = variables[key]
 				End
 			Next
 		End
