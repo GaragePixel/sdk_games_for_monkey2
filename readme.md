@@ -15,6 +15,8 @@ Game development library for Monkey2 focusing on core game systems and abstracti
 
 The `sdk_games` module provides essential game systems that sit between the standard library (`stdlib`) and your game applications. It focuses on platform-agnostic implementations of common game development tools.
 
+[stdlib](https://github.com/GaragePixel/stdlib-for-mx2/tree/main)
+
 By separating core game logic from rendering concerns, `sdk_games` allows developers to:
 - Reuse game systems across different rendering backends
 - Focus on gameplay logic without renderer-specific code
