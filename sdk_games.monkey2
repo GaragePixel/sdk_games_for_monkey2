@@ -13,6 +13,7 @@ Namespace sdk_games
 	Already in sdk_games:
 	
 		- Ink format: Narrative Scripting Language
+		- LUA Binding: Lua is a scripting language used in game development
 
 	Roadmap:
 
@@ -23,8 +24,9 @@ Namespace sdk_games
     		- For managing game states, character behaviors, and AI in a declarative way. 
     		A well-implemented state machine is rendering-agnostic and would benefit almost any game.
 
-    	- Event System - A lightweight publisher/subscriber pattern implementation 
-    	allowing game components to communicate without direct dependencies.
+    	- Event System 
+    		- A lightweight publisher/subscriber pattern implementation 
+    		allowing game components to communicate without direct dependencies.
 
     	- Pathfinding 
     		- A* and navigation mesh 2d/3d implementations for AI movement, while are purely 
