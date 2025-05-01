@@ -52,7 +52,7 @@ This document analyzes the technical tradeoffs between Lua scripting and Ink nar
 - **Drawbacks:**
   - Limited scope outside narrative applications
   - Requires learning domain-specific language
-  - Can't be generated on-fly, need to be precompiled.
+  - Can't be modified on-fly, need to be precompiled.
 
 ## Integration with Monkey2/Aida 4
 
