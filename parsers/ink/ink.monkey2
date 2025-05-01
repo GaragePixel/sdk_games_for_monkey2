@@ -38,3 +38,5 @@ Namespace sdk_games.ink
 ' - Supports both linear and highly branched interactive fiction'
 
 #Import "inkruntime.monkey2"
+#Import "/compiler/inkcompiler"
+'#Import "/player/inkplayer"
