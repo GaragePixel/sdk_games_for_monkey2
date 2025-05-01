@@ -8,6 +8,7 @@ Game development library for Monkey2 focusing on core game systems and abstracti
 ## Documentation
 
 [Document folder](https://github.com/GaragePixel/sdk_games_for_monkey2/tree/main/doc)
+
 [Comparative study between LUA and Ink](https://github.com/GaragePixel/sdk_games_for_monkey2/blob/main/doc/lua_vs_ink.md)
 
 ## Purpose
