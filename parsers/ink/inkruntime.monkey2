@@ -70,24 +70,6 @@ Using stdlib.collections
 '-------------------------------------------------
 Class InkRuntime
 
-	Private
-	
-	Field _storyState:StoryState
-	Field _variables:StringMap<JsonValue>
-	Field _contentContainer:JsonArray
-	Field _outputText:String
-	Field _choices:Stack<JsonObject>
-	Field _contentIndex:Int
-		
-	' Content type constants
-	Const CONTENT_TEXT:Int = 0
-	Const CONTENT_CHOICE:Int = 1
-	Const CONTENT_DIVERT:Int = 2
-	Const CONTENT_VARIABLE:Int = 3
-	Const CONTENT_CONDITIONAL:Int = 4
-
-	Public
-
 	Method New()
 		' Initialize the runtime state
 		_storyState = New StoryState()
@@ -351,21 +333,28 @@ Class InkRuntime
 			
 		Return False
 	End
+	
+	Private
+	
+	Field _storyState:StoryState
+	Field _variables:StringMap<JsonValue>
+	Field _contentContainer:JsonArray
+	Field _outputText:String
+	Field _choices:Stack<JsonObject>
+	Field _contentIndex:Int
+		
+	' Content type constants
+	Const CONTENT_TEXT:Int = 0
+	Const CONTENT_CHOICE:Int = 1
+	Const CONTENT_DIVERT:Int = 2
+	Const CONTENT_VARIABLE:Int = 3
+	Const CONTENT_CONDITIONAL:Int = 4
 End
 
 '-------------------------------------------------
 ' StoryState Class Definition
 '-------------------------------------------------
 Class StoryState
-
-	Private
-	
-	Field _variables:StringMap<JsonValue>
-	Field _currentPosition:Int
-	Field _callStack:Stack<Int>
-	Field _isComplete:Bool
-
-	Public
 	
 	Method New()
 		_variables = New StringMap<JsonValue>()
@@ -505,6 +494,14 @@ Class StoryState
 		' Mark the story as complete or incomplete
 		_isComplete = complete
 	End
+	
+	Private
+	
+	Field _variables:StringMap<JsonValue>
+	Field _currentPosition:Int
+	Field _callStack:Stack<Int>
+	Field _isComplete:Bool
+
 End
 
 '-------------------------------------------------
@@ -527,142 +524,142 @@ End
 
 Class StoryLink
 	
-	Private
-		Field _globalState:JsonObject
-		Field _runtime:InkRuntime
+	Method New(runtime:InkRuntime)
+		_runtime = runtime
+		_globalState = New JsonObject()
+	End
 		
-	Public
-		Method New(runtime:InkRuntime)
-			_runtime = runtime
-			_globalState = New JsonObject()
-		End
-		
-		' Extract global variables from current story
-		Method CaptureGlobalState()
-			Local variables:StringMap<JsonValue> = _runtime.GetAllVariables()
-			_globalState = New JsonObject()
+	' Extract global variables from current story
+	Method CaptureGlobalState()
+		Local variables:StringMap<JsonValue> = _runtime.GetAllVariables()
+		_globalState = New JsonObject()
 			
-			For Local key:String = Eachin variables.Keys
-				' Only capture variables marked as global in Ink
-				If key.StartsWith("GLOBAL.")
-					_globalState[key] = variables[key]
-				End
-			Next
-		End
-		
-		' Apply captured variables to a newly loaded story
-		Method ApplyGlobalState()
-			For Local i:Int = 0 Until _globalState.Count()  ' Add parentheses to Count call
-				Local key:String = GetSafeJsonKey(_globalState, i)
-				
-				If key <> ""
-					_runtime.SetVariable(key, _globalState[key])
-				End
-			Next
-		End
-		
-		' Transition to a new story while preserving state
-		Method TransitionToStory(storyJson:JsonObject)
-			' First capture current globals
-			CaptureGlobalState()
-			
-			' Load the new story
-			_runtime.LoadStory(storyJson)
-			
-			' Apply captured globals to new story
-			ApplyGlobalState()
-		End
-		
-		' Helper method for safely getting keys from a JsonObject
-		Method GetSafeJsonKey:String(json:JsonObject, index:Int)
-			If json = Null Or index < 0 Or index >= json.Count() Then Return ""  ' Add parentheses to Count call
-			
-			' Extract via string parsing since direct key access isn't available
-			Local jsonStr:String = json.ToString()
-			' Remove outer braces
-			jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
-			
-			If jsonStr.Length = 0 Then Return ""
-			
-			Local pairs:String[] = jsonStr.Split(",")
-			If index >= pairs.Length Then Return ""
-			
-			Local pair:String = pairs[index]
-			Local keyValue:String[] = pair.Split(":")
-			
-			If keyValue.Length < 2 Then Return ""
-			
-			' Extract and clean key (remove quotes)
-			Local key:String = keyValue[0].Trim()
-			If key.StartsWith("~q") And key.EndsWith("~q")
-				key = key.Slice(2, key.Length-2)
-			Elseif key.StartsWith("\") And key.EndsWith("\")
-				key = key.Slice(1, key.Length-1)
+		For Local key:String = Eachin variables.Keys
+			' Only capture variables marked as global in Ink
+			If key.StartsWith("GLOBAL.")
+				_globalState[key] = variables[key]
 			End
+		Next
+	End
+		
+	' Apply captured variables to a newly loaded story
+	Method ApplyGlobalState()
+		For Local i:Int = 0 Until _globalState.Count()  ' Add parentheses to Count call
+			Local key:String = GetSafeJsonKey(_globalState, i)
+				
+			If key <> ""
+				_runtime.SetVariable(key, _globalState[key])
+			End
+		Next
+	End
+		
+	' Transition to a new story while preserving state
+	Method TransitionToStory(storyJson:JsonObject)
+		' First capture current globals
+		CaptureGlobalState()
 			
-			Return key
+		' Load the new story
+		_runtime.LoadStory(storyJson)
+			
+		' Apply captured globals to new story
+		ApplyGlobalState()
+	End
+		
+	' Helper method for safely getting keys from a JsonObject
+	Method GetSafeJsonKey:String(json:JsonObject, index:Int)
+		If json = Null Or index < 0 Or index >= json.Count() Then Return ""  ' Add parentheses to Count call
+			
+		' Extract via string parsing since direct key access isn't available
+		Local jsonStr:String = json.ToString()
+		' Remove outer braces
+		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
+			
+		If jsonStr.Length = 0 Then Return ""
+			
+		Local pairs:String[] = jsonStr.Split(",")
+		If index >= pairs.Length Then Return ""
+			
+		Local pair:String = pairs[index]
+		Local keyValue:String[] = pair.Split(":")
+			
+		If keyValue.Length < 2 Then Return ""
+			
+		' Extract and clean key (remove quotes)
+		Local key:String = keyValue[0].Trim()
+		If key.StartsWith("~q") And key.EndsWith("~q")
+			key = key.Slice(2, key.Length-2)
+		Elseif key.StartsWith("\") And key.EndsWith("\")
+			key = key.Slice(1, key.Length-1)
 		End
+			
+		Return key
+	End
+	
+	Private
+	
+	Field _globalState:JsonObject
+	Field _runtime:InkRuntime
 End
 
 '-------------------------------------------------
 ' JsonObjectExt - Extension Methods for JsonObject
 '-------------------------------------------------
-Class JsonObjectExt
 
-	Public
-		' Safer iteration over JsonObject keys and values
-		Function ForEach(json:JsonObject, callback:Void(key:String, value:JsonValue))
-			If json = Null Then Return
+Class JsonObjectExt
+	
+	' Safer iteration over JsonObject keys and values
+	Function ForEach(json:JsonObject, callback:Void(key:String, value:JsonValue))
+		If json = Null Then Return
 			
-			Local jsonStr:String = json.ToString()
-			' Remove outer braces
-			jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
+		Local jsonStr:String = json.ToString()
+		' Remove outer braces
+		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
 			
-			If jsonStr.Length = 0 Then Return
+		If jsonStr.Length = 0 Then Return
 			
-			' Split by commas (handles simple cases well)
-			Local pairs:String[] = jsonStr.Split(",")
+		' Split by commas (handles simple cases well)
+		Local pairs:String[] = jsonStr.Split(",")
 			
-			For Local pair:String = Eachin pairs
-				Local keyValue:String[] = pair.Split(":")
+		For Local pair:String = Eachin pairs
+			Local keyValue:String[] = pair.Split(":")
 				
-				If keyValue.Length >= 2
-					' Extract key (remove quotes)
-					Local key:String = keyValue[0].Trim()
+			If keyValue.Length >= 2
+				' Extract key (remove quotes)
+				Local key:String = keyValue[0].Trim()
 					
-					If key.StartsWith("~q") And key.EndsWith("~q")
-						key = key.Slice(2, key.Length-2)
-					Elseif key.StartsWith("\") And key.EndsWith("\")
-						key = key.Slice(1, key.Length-1)
-					End
-					
-					' Only call if the key exists in the original object (to be safe)
-					If json.Contains(key)
-						callback(key, json[key])
-					End
+				If key.StartsWith("~q") And key.EndsWith("~q")
+					key = key.Slice(2, key.Length-2)
+				Elseif key.StartsWith("\") And key.EndsWith("\")
+					key = key.Slice(1, key.Length-1)
 				End
-			Next
-		End
-		
-		' Create a String array of keys
-		Function GetKeys:String[](json:JsonObject)
-			Local keys:Stack<String> = New Stack<String>()
-			
-			ForEach(json, Lambda(key:String, value:JsonValue)
-				keys.Push(key)
-			End)
-			
-			Return keys.ToArray()
-		End
-		
-		' Safe version of getting a key by index
-		Function KeyAt:String(json:JsonObject, index:Int)
-			Local keys:String[] = GetKeys(json)
-			
-			If index >= 0 And index < keys.Length
-				Return keys[index]
+					
+				' Only call if the key exists in the original object (to be safe)
+				If json.Contains(key)
+					callback(key, json[key])
+				End
 			End
+		Next
+	End
+		
+	' Create a String array of keys
+	Function GetKeys:String[](json:JsonObject)
+		Local keys:Stack<String> = New Stack<String>()
 			
-			Return ""
+		ForEach(json, Lambda(key:String, value:JsonValue)
+			keys.Push(key)
+		End)
+			
+		Return keys.ToArray()
+	End
+		
+	' Safe version of getting a key by index
+	Function KeyAt:String(json:JsonObject, index:Int)
+		Local keys:String[] = GetKeys(json)
+			
+		If index >= 0 And index < keys.Length
+			Return keys[index]
 		End
+			
+		Return ""
+	End
 End
