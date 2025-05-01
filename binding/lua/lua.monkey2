@@ -26,7 +26,7 @@ SOFTWARE.
 '	Thanks to https://github.com/swoolcock/
 '	iDkP from https://github.com/GaragePixel/ Code refactoring and more examples
 
-Namespace sdk.binding.lua
+Namespace sdk_games.binding.lua
 
 #Import "api.monkey2"
 
