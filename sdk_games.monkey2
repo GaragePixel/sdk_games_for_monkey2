@@ -35,7 +35,15 @@ Namespace sdk_games
 
 #Import "<stdlib>"
 
-#Import "parsers/ink/ink"
+'Bindings
+#Import "binding/lua/lua"											'Binding Lua
+																	'depends:
+																	'	stdlib.plugins.libc
+
+'Parsers
+#Import "parsers/ink/ink" 											'Narrative Scripting Language
+																	'depends:
+																	'	stdlib
 
 Function Main()
 End
