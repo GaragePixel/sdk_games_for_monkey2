@@ -51,4 +51,5 @@ Namespace sdk_games
 																	'	stdlib
 
 Function Main()
+	Print "sdk_games version 1.0 - 2025-05-01"
 End
