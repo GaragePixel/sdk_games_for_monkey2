@@ -5,4 +5,7 @@ Namespace sdk_games
 
 #Import "parsers/ink/ink"
 #Import "parsers/ink/compiler/inkcompiler"
-#Import "parsers/ink/player/inkplayer"
+'#Import "parsers/ink/player/inkplayer"
+
+Function Main()
+End
