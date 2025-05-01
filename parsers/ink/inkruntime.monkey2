@@ -1,35 +1,40 @@
 '-------------------------------------------------
-' InkRuntime Extensions - Global State & JSON Enhancements
+' InkRuntime - Implements the Ink virtual machine (runtime)
 '-------------------------------------------------
 ' iDkP from GaragePixel
-' 2025-04-30, Aida 4
+' 2025-05-01, Aida 4
 '
 ' Purpose:
 ' 
-' Define extensions to the Ink runtime for:
-' 1. Maintaining state across different story files/segments
-' 2. Enhancing JSON object iteration capabilities
+' Implements a complete runtime environment for Ink narrative scripts,
+' allowing dynamic story progression, state tracking, and branching
+' narrative execution. Acts as the core virtual machine that powers
+' the interactive fiction capabilities.
 '
 ' List of Functionality:
 '
-' - Extract global variables from story segments
-' - Persist variables between story transitions
-' - Create memory-only JSON data for transfer
-' - Enhance JSON object iteration with extension methods
+' - Parse and process Ink story JSON structures
+' - Manage story state including variables, call stack, and positions
+' - Handle content of different types (text, choices, diverts, conditionals)
+' - Progress story based on user choices and script logic
+' - Maintain global and local variable scope
+' - Support transitions between story segments
 '
 ' Notes:
 '
-' Rather than implementing full streaming, this approach
-' focuses on variable persistence between discrete story loads.
-' This maintains compatibility with the existing inkplayer
-' while adding multi-segment capabilities.
+' The runtime follows a modular design pattern with clear separation
+' between state management (StoryState), execution context (InkRuntime),
+' and story progression mechanisms. This implementation focuses on
+' performance and memory efficiency for resource-constrained environments.
 '
 ' Technical Advantages:
 '
-' - Simpler than full streaming with comparable user experience
-' - Memory-efficient by only persisting necessary state
-' - Avoids file I/O overhead during story transitions
-' - Enhances JSON library without breaking existing functionality
+' - Zero dependency on external libraries beyond stdlib: https://github.com/GaragePixel/stdlib-for-mx2/tree/main
+' - Memory-efficient variable management with scope awareness
+' - Flexible design allowing for extensions like StoryLink
+' - Optimized content processing with minimal overhead
+' - Compatible with standard Ink compiler JSON output format
+' - Handles complex nested structures including conditional logic
 '
 Namespace sdk_games.parsers.ink
 
@@ -79,6 +84,10 @@ Class InkRuntime
 		_choices = New Stack<JsonObject>()
 		_contentIndex = 0
 	End
+	
+	Property CurrentState:StoryState()
+		Return _storyState
+	End 
 
 	Method LoadStory(json:JsonObject)
 		' Load the story's JSON data into the runtime
@@ -87,6 +96,7 @@ Class InkRuntime
 		End
 
 		_storyState.Load(json["state"])
+		 'Print "StoryState after load:"+_storyState.ToString() 'TEST
 			
 		' Load main content container
 		If json.Contains("mainContentContainer")
@@ -115,16 +125,23 @@ Class InkRuntime
 			RuntimeError("Content container is not initialized")
 		End
 
-		_outputText = ""
+ 		Print "Content container before advancing:"+_contentContainer.ToJson() 'TEST
+
+		_outputText = "a" 'a=TEST
 		_choices.Clear()
 
 		While Not _storyState.IsComplete() And _contentIndex < _contentContainer.Length
 			Local nextContent:JsonValue = _contentContainer[_contentIndex]
+			Print "Next content:"+nextContent.ToJson() 'TEST
 			_contentIndex += 1
 				
-			If nextContent = Null Exit
+			If nextContent = Null 
+				Print "Exit" 'TEST
+				Exit
+			End 
 				
 			Local contentType:Int = ProcessContent(nextContent)
+			_outputText+="b"+_contentIndex 'TEST
 				
 			If contentType = CONTENT_CHOICE
 				' Stop advancing when we encounter choices
@@ -599,67 +616,4 @@ Class StoryLink
 	
 	Field _globalState:JsonObject
 	Field _runtime:InkRuntime
-End
-
-'-------------------------------------------------
-' JsonObjectExt - Extension Methods for JsonObject
-'-------------------------------------------------
-
-Class JsonObjectExt
-	
-	' Safer iteration over JsonObject keys and values
-	Function ForEach(json:JsonObject, callback:Void(key:String, value:JsonValue))
-		If json = Null Return
-			
-		Local jsonStr:String = json.ToString()
-		' Remove outer braces
-		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
-			
-		If jsonStr.Length = 0 Return
-			
-		' Split by commas (handles simple cases well)
-		Local pairs:String[] = jsonStr.Split(",")
-			
-		For Local pair:String = Eachin pairs
-			Local keyValue:String[] = pair.Split(":")
-				
-			If keyValue.Length >= 2
-				' Extract key (remove quotes)
-				Local key:String = keyValue[0].Trim()
-					
-				If key.StartsWith("~q") And key.EndsWith("~q")
-					key = key.Slice(2, key.Length-2)
-				Elseif key.StartsWith("\") And key.EndsWith("\")
-					key = key.Slice(1, key.Length-1)
-				End
-					
-				' Only call if the key exists in the original object (to be safe)
-				If json.Contains(key)
-					callback(key, json[key])
-				End
-			End
-		Next
-	End
-		
-	' Create a String array of keys
-	Function GetKeys:String[](json:JsonObject)
-		Local keys:Stack<String> = New Stack<String>()
-			
-		ForEach(json, Lambda(key:String, value:JsonValue)
-			keys.Push(key)
-		End)
-			
-		Return keys.ToArray()
-	End
-		
-	' Safe version of getting a key by index
-	Function KeyAt:String(json:JsonObject, index:Int)
-		Local keys:String[] = GetKeys(json)
-			
-		If index >= 0 And index < keys.Length
-			Return keys[index]
-		End
-			
-		Return ""
-	End
 End
