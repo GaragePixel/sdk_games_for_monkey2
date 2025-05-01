@@ -2,6 +2,9 @@
 Namespace sdk_games
 
 #rem 
+
+	Should compile in 30 secondes.
+
 	sdk_games is a library who follows the same naming convention that sdk and sdk_mojo, from the same
 	author (iDkP from GaragePixel) and the same project (minimal module assets for the Monkey2 language).
 	This library provide a core gameplay systems while maintaining independence 
