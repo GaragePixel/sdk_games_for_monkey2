@@ -22,9 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 #End
 
-Namespace sdk.binding.lua.api
+Namespace sdk_games.binding.lua.api
 
-Using sdk.binding.lua
+Using sdk_games.binding.lua
 Using stdlib.plugins.libc..
 
 'Added by iDkP for better handling:
