@@ -96,7 +96,7 @@ Class InkRuntime
 	
 		' Initialize the story state
 		If json.Contains("state")
-			_storyState.Load(json["state"])
+			_storyState.Load(json.GetValue("state"))
 			Print("StoryState initialized from JSON.")
 		Else
 			Print("Warning: No 'state' key in JSON. Initializing default state.")
@@ -104,8 +104,8 @@ Class InkRuntime
 		End
 	
 		' Check and load main content container
-		If json.Contains("root") And json["root"].IsArray
-		    _contentContainer = Cast<JsonArray>(json["root"])
+		If json.Contains("root") And json.GetValue("root").IsArray
+		    _contentContainer = Cast<JsonArray>(json.GetValue("root"))
 		    Print "Root content loaded with "+_contentContainer.Length+" items."
 		Else
 		    Print "Error: 'root' key missing or not an array."
@@ -146,7 +146,7 @@ Class InkRuntime
 		Local targetPos:Int = 0
 			
 		If choice.Contains("targetPosition")
-			targetPos = Int(choice["targetPosition"].ToNumber())
+			targetPos = Int(choice.GetValue("targetPosition").ToNumber())
 		End
 			
 		' Update the story state
@@ -373,101 +373,4 @@ Class StoryState
 	Field _callStack:Stack<Int>
 	Field _isComplete:Bool
 
-End
-
-'-------------------------------------------------
-' StoryLink Class for Managing Story Transitions
-'-------------------------------------------------
-' StoryLink facilitates the transition between multiple Ink story files while
-' maintaining narrative continuity through variable persistence. Unlike full
-' streaming, this approach keeps memory consumption efficient by only storing
-' essential global state (variables with "GLOBAL." prefix).
-'
-' When a player completes a story segment and needs to move to another file,
-' StoryLink extracts all global variables, creates a temporary in-memory
-' representation, loads the new story file, and applies the preserved variables
-' to the fresh instance. This allows for multi-episode narratives without
-' requiring custom modifications to the Ink compiler.
-'
-' The JSON extensions handle the technical challenge of safely extracting
-' key-value pairs from JSON objects despite stdlib limitations, ensuring
-' reliable operation across story transitions.
-
-Class StoryLink
-	
-	Method New(runtime:InkRuntime)
-		_runtime = runtime
-		_globalState = New JsonObject()
-	End
-		
-	' Extract global variables from current story
-	Method CaptureGlobalState()
-		Local variables:StringMap<JsonValue> = _runtime.GetAllVariables()
-		_globalState = New JsonObject()
-			
-		For Local key:String = Eachin variables.Keys
-			' Only capture variables marked as global in Ink
-			If key.StartsWith("GLOBAL.")
-				_globalState[key] = variables[key]
-			End
-		Next
-	End
-		
-	' Apply captured variables to a newly loaded story
-	Method ApplyGlobalState()
-		For Local i:Int = 0 Until _globalState.Count()  ' Add parentheses to Count call
-			Local key:String = GetSafeJsonKey(_globalState, i)
-				
-			If key <> ""
-				_runtime.SetVariable(key, _globalState[key])
-			End
-		Next
-	End
-		
-	' Transition to a new story while preserving state
-	Method TransitionToStory(storyJson:JsonObject)
-		' First capture current globals
-		CaptureGlobalState()
-			
-		' Load the new story
-		_runtime.LoadStory(storyJson)
-			
-		' Apply captured globals to new story
-		ApplyGlobalState()
-	End
-		
-	' Helper method for safely getting keys from a JsonObject
-	Method GetSafeJsonKey:String(json:JsonObject, index:Int)
-		If json = Null Or index < 0 Or index >= json.Count() Return ""  ' Add parentheses to Count call
-			
-		' Extract via string parsing since direct key access isn't available
-		Local jsonStr:String = json.ToString()
-		' Remove outer braces
-		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
-			
-		If jsonStr.Length = 0 Return ""
-			
-		Local pairs:String[] = jsonStr.Split(",")
-		If index >= pairs.Length Return ""
-			
-		Local pair:String = pairs[index]
-		Local keyValue:String[] = pair.Split(":")
-			
-		If keyValue.Length < 2 Return ""
-			
-		' Extract and clean key (remove quotes)
-		Local key:String = keyValue[0].Trim()
-		If key.StartsWith("~q") And key.EndsWith("~q")
-			key = key.Slice(2, key.Length-2)
-		Elseif key.StartsWith("\") And key.EndsWith("\")
-			key = key.Slice(1, key.Length-1)
-		End
-			
-		Return key
-	End
-	
-	Private
-	
-	Field _globalState:JsonObject
-	Field _runtime:InkRuntime
 End
