@@ -122,7 +122,7 @@ Class InkRuntime
 			Local nextContent:JsonValue = _contentContainer[_contentIndex]
 			_contentIndex += 1
 				
-			If nextContent = Null Then Exit
+			If nextContent = Null Exit
 				
 			Local contentType:Int = ProcessContent(nextContent)
 				
@@ -189,7 +189,7 @@ Class InkRuntime
 		objStr = objStr.Slice(1, objStr.Length-1)
 			
 		' If empty object, return
-		If objStr.Length = 0 Then Return
+		If objStr.Length = 0 Return
 			
 		' Split by commas (this is a simple approach that works for basic JSON)
 		Local pairs:String[] = objStr.Split(",")
@@ -210,7 +210,7 @@ Class InkRuntime
 		
 	Method ProcessContent:Int(content:JsonValue)
 		' Process a content item and determine its type
-		If content = Null Then Return -1
+		If content = Null Return -1
 			
 		' If it's not an object, treat as plain text
 		If Not content.IsObject
@@ -280,7 +280,7 @@ Class InkRuntime
 		
 	Method EvaluateCondition:Bool(condition:JsonValue)
 		' Evaluate a condition expression
-		If condition = Null Then Return False
+		If condition = Null Return False
 			
 		If condition.IsObject
 			Local conditionObj:JsonObject = Cast<JsonObject>(condition)
@@ -321,7 +321,7 @@ Class InkRuntime
 		
 	Method CompareJsonValues:Bool(value1:JsonValue, value2:JsonValue)
 		' Compare two JSON values for equality
-		If value1 = Null Or value2 = Null Then Return False
+		If value1 = Null Or value2 = Null Return False
 			
 		If value1.IsString And value2.IsString
 			Return value1.ToString() = value2.ToString()
@@ -365,7 +365,7 @@ Class StoryState
 
 	Method Load(stateValue:JsonValue)
 		' Load story state from JSON
-		If stateValue = Null Or Not stateValue.IsObject Then Return
+		If stateValue = Null Or Not stateValue.IsObject Return
 			
 		Local state:JsonObject = Cast<JsonObject>(stateValue)
 			
@@ -408,7 +408,7 @@ Class StoryState
 		objStr = objStr.Slice(1, objStr.Length-1)
 			
 		' If empty object, return
-		If objStr.Length = 0 Then Return
+		If objStr.Length = 0 Return
 			
 		' Split by commas (this is a simple approach that works for basic JSON)
 		Local pairs:String[] = objStr.Split(",")
@@ -567,22 +567,22 @@ Class StoryLink
 		
 	' Helper method for safely getting keys from a JsonObject
 	Method GetSafeJsonKey:String(json:JsonObject, index:Int)
-		If json = Null Or index < 0 Or index >= json.Count() Then Return ""  ' Add parentheses to Count call
+		If json = Null Or index < 0 Or index >= json.Count() Return ""  ' Add parentheses to Count call
 			
 		' Extract via string parsing since direct key access isn't available
 		Local jsonStr:String = json.ToString()
 		' Remove outer braces
 		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
 			
-		If jsonStr.Length = 0 Then Return ""
+		If jsonStr.Length = 0 Return ""
 			
 		Local pairs:String[] = jsonStr.Split(",")
-		If index >= pairs.Length Then Return ""
+		If index >= pairs.Length Return ""
 			
 		Local pair:String = pairs[index]
 		Local keyValue:String[] = pair.Split(":")
 			
-		If keyValue.Length < 2 Then Return ""
+		If keyValue.Length < 2 Return ""
 			
 		' Extract and clean key (remove quotes)
 		Local key:String = keyValue[0].Trim()
@@ -609,13 +609,13 @@ Class JsonObjectExt
 	
 	' Safer iteration over JsonObject keys and values
 	Function ForEach(json:JsonObject, callback:Void(key:String, value:JsonValue))
-		If json = Null Then Return
+		If json = Null Return
 			
 		Local jsonStr:String = json.ToString()
 		' Remove outer braces
 		jsonStr = jsonStr.Slice(1, jsonStr.Length-1).Trim()
 			
-		If jsonStr.Length = 0 Then Return
+		If jsonStr.Length = 0 Return
 			
 		' Split by commas (handles simple cases well)
 		Local pairs:String[] = jsonStr.Split(",")
