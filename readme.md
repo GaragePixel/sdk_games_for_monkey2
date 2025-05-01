@@ -19,6 +19,16 @@ By separating core game logic from rendering concerns, `sdk_games` allows develo
 
 Currently, the library includes:
 
+### Bindings
+  - **Lua Scripting**: Comprehensive bindings for the Lua programming language
+    - Full Lua 5.x API integration
+    - Script loading and execution
+    - Bidirectional data binding
+    - Safe sandboxed environments
+    - Error handling and debugging support
+    - Game state manipulation from scripts
+    - Event-driven script callbacks
+
 ### Parsers
 - **Ink Runtime**: Complete implementation of Inkle Studios' narrative scripting language runtime
   - Story parsing and execution
