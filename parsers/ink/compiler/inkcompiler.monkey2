@@ -37,14 +37,6 @@ Using stdlib.collections
 ' InkCompiler Class Definition
 '-------------------------------------------------
 Class InkCompiler
-
-	Private
-	
-	Field _rawScript:String
-	Field _parsedContent:List<JsonValue>
-	Field _errors:List<String>
-
-	Public
 	
 	Method New()
 		' Initialize the compiler state
@@ -112,4 +104,9 @@ Class InkCompiler
 		Return jsonArray
 	End
 
+	Private
+	
+	Field _rawScript:String
+	Field _parsedContent:List<JsonValue>
+	Field _errors:List<String>
 End
