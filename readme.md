@@ -5,6 +5,11 @@ Game development library for Monkey2 focusing on core game systems and abstracti
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Documentation
+
+[Document folder](https://github.com/GaragePixel/sdk_games_for_monkey2/tree/main/doc)
+[Comparative study between LUA and Ink](https://github.com/GaragePixel/sdk_games_for_monkey2/blob/main/doc/lua_vs_ink.md)
+
 ## Purpose
 
 The `sdk_games` module provides essential game systems that sit between the standard library (`stdlib`) and your game applications. It focuses on platform-agnostic implementations of common game development tools.
