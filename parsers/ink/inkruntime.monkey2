@@ -90,66 +90,44 @@ Class InkRuntime
 	End 
 
 	Method LoadStory(json:JsonObject)
-		' Load the story's JSON data into the runtime
-		If json = Null
-			RuntimeError("Story JSON data cannot be Null")
+	
+		' Debug print to verify JSON structure
+'		Print "LoadStory JSON:"+json.ToString()
+	
+		' Initialize the story state
+		If json.Contains("state")
+			_storyState.Load(json["state"])
+			Print("StoryState initialized from JSON.")
+		Else
+			Print("Warning: No 'state' key in JSON. Initializing default state.")
+			_storyState = New StoryState() ' Create an empty state
 		End
-
-		_storyState.Load(json["state"])
-		 'Print "StoryState after load:"+_storyState.ToString() 'TEST
-			
-		' Load main content container
-		If json.Contains("mainContentContainer")
-			If json["mainContentContainer"].IsArray
-				_contentContainer = Cast<JsonArray>(json["mainContentContainer"])
-			End
+	
+		' Check and load main content container
+		If json.Contains("root") And json["root"].IsArray
+		    _contentContainer = Cast<JsonArray>(json["root"])
+		    Print "Root content loaded with "+_contentContainer.Length+" items."
+		Else
+		    Print "Error: 'root' key missing or not an array."
+		    Return
 		End
-			
-		' Load variables
-		_variables.Clear()
-		If json.Contains("variables")
-			If json["variables"].IsObject
-				Local vars:JsonObject = Cast<JsonObject>(json["variables"])
-				' Since we can't directly iterate JSON objects, we'll check known keys
-				' This is a workaround since the JSON library doesn't provide direct iteration
-				ExtractKeysFromObject(vars, _variables)
-			End
-		End
-			
+	
+		' Reset content index
 		_contentIndex = 0
+	
 	End
 
 	Method AdvanceStory:String()
-		' Progress the story and return the next output text
-		If _contentContainer = Null
-			RuntimeError("Content container is not initialized")
-		End
-
- 		Print "Content container before advancing:"+_contentContainer.ToJson() 'TEST
-
-		_outputText = "a" 'a=TEST
-		_choices.Clear()
-
-		While Not _storyState.IsComplete() And _contentIndex < _contentContainer.Length
-			Local nextContent:JsonValue = _contentContainer[_contentIndex]
-			Print "Next content:"+nextContent.ToJson() 'TEST
-			_contentIndex += 1
-				
-			If nextContent = Null 
-				Print "Exit" 'TEST
-				Exit
-			End 
-				
-			Local contentType:Int = ProcessContent(nextContent)
-			_outputText+="b"+_contentIndex 'TEST
-				
-			If contentType = CONTENT_CHOICE
-				' Stop advancing when we encounter choices
-				Exit
-			End
-		Wend
-
-		Return _outputText
+	    If _contentContainer.Empty Or _contentIndex >= _contentContainer.Length
+	        Print "Story is complete or content container is empty."
+	        Return "The story has ended."
+	    End
+	
+	    Local nextContent:JsonValue = _contentContainer[_contentIndex]
+	    _contentIndex += 1
+	
+	    ' Process and return the content
+	    Return ProcessContent(nextContent)
 	End
 
 	Method GetChoices:Stack<JsonObject>()
@@ -198,142 +176,18 @@ Class InkRuntime
 
 	Private
 	
-	' Helper method to extract keys from JSON object into a StringMap
-	Method ExtractKeysFromObject(obj:JsonObject, map:StringMap<JsonValue>)
-		' Get its string representation (hack but works)
-		Local objStr:String = obj.ToString()
-		' Remove outer braces
-		objStr = objStr.Slice(1, objStr.Length-1)
-			
-		' If empty object, return
-		If objStr.Length = 0 Return
-			
-		' Split by commas (this is a simple approach that works for basic JSON)
-		Local pairs:String[] = objStr.Split(",")
-		For Local pair:String = Eachin pairs
-			Local keyValue:String[] = pair.Split(":")
-			If keyValue.Length >= 2
-				' Extract key (remove quotes)
-				Local key:String = keyValue[0].Trim()
-				key = key.Slice(1, key.Length-1)  ' Remove quotes
-					
-				' If the JSON object has this key, add it to the map
-				If obj.Contains(key)
-					map[key] = obj[key]
-				End
-			End
-		Next
-	End
-		
-	Method ProcessContent:Int(content:JsonValue)
-		' Process a content item and determine its type
-		If content = Null Return -1
-			
-		' If it's not an object, treat as plain text
-		If Not content.IsObject
-			_outputText += content.ToString()
-			Return CONTENT_TEXT
-		End
-			
-		' Process as content object
-		Local contentObj:JsonObject = Cast<JsonObject>(content)
-			
-		' Check content type
-		If contentObj.Contains("type")
-			Local typeStr:String = contentObj["type"].ToString()
-			Local typeInt:Int = Int(typeStr)
-				
-			Select typeInt
-				Case CONTENT_TEXT
-					If contentObj.Contains("text")
-						_outputText += contentObj["text"].ToString()
-					End
-					Return CONTENT_TEXT
-						
-				Case CONTENT_CHOICE
-					' Add to available choices
-					_choices.Push(contentObj)
-					Return CONTENT_CHOICE
-						
-				Case CONTENT_DIVERT
-					' Handle divert
-					If contentObj.Contains("target")
-						Local targetStr:String = contentObj["target"].ToString()
-						Local targetPos:Int = Int(targetStr)
-						_contentIndex = targetPos
-					End
-					Return CONTENT_DIVERT
-						
-				Case CONTENT_VARIABLE
-					' Process variable reference
-					If contentObj.Contains("name")
-						Local varName:String = contentObj["name"].ToString()
-						If _variables.Contains(varName)
-							_outputText += _variables[varName].ToString()
-						End
-					End
-					Return CONTENT_VARIABLE
-						
-				Case CONTENT_CONDITIONAL
-					' Handle conditional logic
-					If contentObj.Contains("condition") And contentObj.Contains("content")
-						If EvaluateCondition(contentObj["condition"])
-							' Process conditional content
-							ProcessContent(contentObj["content"])
-						Elseif contentObj.Contains("else")
-							' Process else content
-							ProcessContent(contentObj["else"])
-						End
-					End
-					Return CONTENT_CONDITIONAL
-						
-				Default
-					RuntimeError("Unsupported content type: " + String(typeInt))
-			End
-		End
-			
-		Return -1
-	End
-		
-	Method EvaluateCondition:Bool(condition:JsonValue)
-		' Evaluate a condition expression
-		If condition = Null Return False
-			
-		If condition.IsObject
-			Local conditionObj:JsonObject = Cast<JsonObject>(condition)
-				
-			If conditionObj.Contains("variable") And conditionObj.Contains("value")
-				Local variableName:String = conditionObj["variable"].ToString()
-				Local expectedValue:JsonValue = conditionObj["value"]
-				
-				If _variables.Contains(variableName)
-					Local actualValue:JsonValue = _variables[variableName]
-					Return CompareJsonValues(actualValue, expectedValue)
-				End
-			Elseif conditionObj.Contains("op")
-				' Handle logical operations
-				Local operation:String = conditionObj["op"].ToString()
-				
-				Select operation
-					Case "and"
-						If conditionObj.Contains("left") And conditionObj.Contains("right")
-							Return EvaluateCondition(conditionObj["left"]) And EvaluateCondition(conditionObj["right"])
-						End
-					Case "or"
-						If conditionObj.Contains("left") And conditionObj.Contains("right")
-							Return EvaluateCondition(conditionObj["left"]) Or EvaluateCondition(conditionObj["right"])
-						End
-					Case "not"
-						If conditionObj.Contains("value")
-							Return Not EvaluateCondition(conditionObj["value"])
-						End
-				End
-			End
-		Elseif condition.IsBool
-			Return condition.ToBool()
-		End
-			
-		Return False
+	Method ProcessContent:String(content:JsonValue)
+	    If content.IsString Return content.ToString()
+	
+	    If content.IsArray
+	        Local output:String = ""
+	        For Local item:=Eachin content.ToArray()
+	            output+=ProcessContent(item)
+	        End
+	        Return output
+	    End
+	
+	    Return "Unsupported content type."
 	End
 		
 	Method CompareJsonValues:Bool(value1:JsonValue, value2:JsonValue)
