@@ -177,7 +177,24 @@ Class InkRuntime
 	Private
 	
 	Method ProcessContent:String(content:JsonValue)
-	    If content.IsString Return content.ToString()
+	    'If content.IsString Return content.ToString()
+
+		If content.IsString
+			Local text:String = content.ToString()
+
+			'If text.Find("#") Return ""
+			'If text.Find("/#") Return ""
+			text = text.Replace("#", "")
+			text = text.Replace("/", "~n")
+'			text = text.Replace("#^image:", "Image: ")
+'			text = text.Replace("#^music:", "Music: ")
+'			text = text.Replace("#^sfx:", "Sound Effect: ")
+'			text = text.Replace("/#", "~n").Trim()
+'			text = text.Replace("n#", "~n").Trim()
+	
+			'Return text+"~n"
+			Return text
+		End
 	
 	    If content.IsArray
 	        Local output:String = ""
