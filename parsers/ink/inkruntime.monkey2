@@ -178,24 +178,7 @@ Class InkRuntime
 	
 	Method ProcessContent:String(content:JsonValue)
 	    'If content.IsString Return content.ToString()
-
-		If content.IsString
-			Local text:String = content.ToString()
-
-			'If text.Find("#") Return ""
-			'If text.Find("/#") Return ""
-			text = text.Replace("#", "")
-			text = text.Replace("/", "~n")
-'			text = text.Replace("#^image:", "Image: ")
-'			text = text.Replace("#^music:", "Music: ")
-'			text = text.Replace("#^sfx:", "Sound Effect: ")
-'			text = text.Replace("/#", "~n").Trim()
-'			text = text.Replace("n#", "~n").Trim()
-	
-			'Return text+"~n"
-			Return text
-		End
-	
+	    
 	    If content.IsArray
 	        Local output:String = ""
 	        For Local item:=Eachin content.ToArray()
@@ -203,6 +186,44 @@ Class InkRuntime
 	        End
 	        Return output
 	    End
+	    
+		If content.IsObject
+			Local obj:JsonObject = Cast<JsonObject>(content)
+			Local ev:JsonValue = obj.GetValue("/ev")
+			Local str:JsonValue = obj.GetValue("/str")
+	
+			If ev <> Null Or str <> Null' Or str.IsString
+				Local choiceText:String = str.ToString()
+				_choices.Push(obj)
+				Return "~n[Choice] " + choiceText
+			EndIf
+	
+			Return "Unsupported content type."
+		EndIf
+
+		If content.IsString
+			Local text:String = content.ToString()
+
+			'If text.Find("#") Return ""
+			'If text.Find("/#") Return ""
+			text = text.Replace("\n", "~n~n~n")
+			text = text.Replace("/#", "~n")
+			text = text.Replace("#", "")
+			
+'			text = text.Replace("#^image:", "Image: ")
+'			text = text.Replace("#^music:", "Music: ")
+'			text = text.Replace("#^sfx:", "Sound Effect: ")
+'			text = text.Replace("/#", "~n").Trim()
+'			text = text.Replace("n#", "~n").Trim()
+	
+			text = text.Replace("^image:", "Image:")
+			text = text.Replace("^music:", "Music:")
+			text = text.Replace("^sfx:", "Sound Effect:")
+			text = text.Replace("^", "")
+	
+			'Return text+"~n"
+			Return text
+		End
 	
 	    Return "Unsupported content type."
 	End
