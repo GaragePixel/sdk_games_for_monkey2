@@ -196,7 +196,7 @@ Class CallStack
 			Local isCurrent:Bool = (t = _threads.Length - 1)
 			sb.Append("=== THREAD " + (t + 1) + "/" + _threads.Length + (isCurrent ? " (current)" Else "") + " ===\n")
 			For Local i:Int = 0 Until thread._callstack.Length
-				If thread._callstack[i]._type = PushPopType.FunctionType
+				If thread._callstack[i]._type = PushPopType.Func
 					sb.Append("  [FUNCTION] ")
 				Else
 					sb.Append("  [TUNNEL] ")
