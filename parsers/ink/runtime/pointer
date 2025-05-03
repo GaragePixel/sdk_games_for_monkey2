@@ -1,0 +1,114 @@
+Namespace sdk_games.parsers.ink
+
+'===============================================================================
+' Pointer Class - Represents a Point in an Ink Story
+' Implementation: iDkP from GaragePixel
+' Date: 2025-05-03, Aida 4
+'===============================================================================
+'
+' Purpose:
+' 
+' Represents a pointer to a specific location within the Ink story runtime. This
+' class acts as a lightweight structure for navigating and resolving content
+' within the story container hierarchy.
+'
+' Functionality:
+'
+' - Fields:
+'   - `_container`: The current container being pointed to.
+'   - `_index`: The index within the container's content.
+'
+' - Methods:
+'   - `Resolve`: Resolves the pointer to the actual runtime object.
+'   - `ToString`: Provides a string representation of the pointer for debugging.
+'
+' - Properties:
+'   - `isNull`: Checks whether the pointer is null.
+'   - `path`: Retrieves the path of the pointer in the story.
+'
+' - Static Members:
+'   - `StartOf`: Creates a pointer to the start of a container.
+'   - `Null`: Represents a null pointer.
+'
+' Notes:
+'
+' - This implementation ensures compatibility with the Ink story runtime while
+'   maintaining performance and simplicity.
+' - Null pointers are represented using a static instance for consistency.
+'
+' Technical advantages:
+'
+' - Efficiency:
+'   - Lightweight structure optimized for frequent navigation and resolution
+'     within the story runtime.
+'
+' - Robustness:
+'   - Ensures safe handling of null pointers and invalid indices.
+'
+'===============================================================================
+
+Class Pointer
+
+    ' Fields
+    Field _container:Container
+    Field _index:Int
+
+    ' Constructor
+    Method New(container:Container, _index:Int)
+        _container = container
+        _index = index
+    End
+
+	' Returns a string representation of the pointer
+	' more in the monkey2 style (monkey2's code-style logifying), using operator "To"
+	Method To:String()
+		If _container = Null
+			Return "Pointer(Null)"
+		End
+		
+		Return "Pointer(" + _container + ", " + _index + ")"
+	End
+
+
+    ' Method: Provides a string representation of the pointer for debugging
+    ' more in the original c# implementation style.
+    Method ToString:String()
+        If _container = Null
+            Return "Ink Pointer (null)"
+        End
+        Return "Ink Pointer -> " + _container.path.ToString() + " -- index " + String(_index)
+    End
+
+    ' Resolves the pointer to the actual runtime object
+    Method Resolve:RuntimeObject()
+        If _index < 0 Return _container
+        If _container = Null Return Null
+        If _container.content.Length = 0 Return _container
+        If _index >= _container.content.Length Return Null
+        Return _container.content[_index]
+    End
+
+    ' Property: Checks whether the pointer is null
+    Property isNull:Bool()
+        Return _container = Null
+    End
+
+    ' Property: Retrieves the path of the pointer in the story
+    Property path:Path()
+        If isNull Return Null
+        If _index >= 0
+            Return _container.path.PathByAppendingComponent(New Path.Component(_index))
+        Else
+            Return _container.path
+        End
+    End
+
+    ' Static Method: Creates a pointer to the start of a container
+    Function StartOf:Pointer(container:Container)
+        Return New Pointer(container, 0)
+    End
+
+    ' Static Field: Represents a null pointer
+    Global Nil:Pointer = New Pointer(Null, -1)
+
+End
