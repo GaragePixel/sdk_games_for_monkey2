@@ -1,47 +1,4 @@
-'-------------------------------------------------
-' InkRuntime - Implements the Ink virtual machine (runtime)
-'-------------------------------------------------
-' iDkP from GaragePixel
-' 2025-05-01, Aida 4
-'
-' Purpose:
-' 
-' Implements a complete runtime environment for Ink narrative scripts,
-' allowing dynamic story progression, state tracking, and branching
-' narrative execution. Acts as the core virtual machine that powers
-' the interactive fiction capabilities.
-'
-' List of Functionality:
-'
-' - Parse and process Ink story JSON structures
-' - Manage story state including variables, call stack, and positions
-' - Handle content of different types (text, choices, diverts, conditionals)
-' - Progress story based on user choices and script logic
-' - Maintain global and local variable scope
-' - Support transitions between story segments
-'
-' Notes:
-'
-' The runtime follows a modular design pattern with clear separation
-' between state management (StoryState), execution context (InkRuntime),
-' and story progression mechanisms. This implementation focuses on
-' performance and memory efficiency for resource-constrained environments.
-'
-' Technical Advantages:
-'
-' - Zero dependency on external libraries beyond stdlib: https://github.com/GaragePixel/stdlib-for-mx2/tree/main
-' - Memory-efficient variable management with scope awareness
-' - Flexible design allowing for extensions like StoryLink
-' - Optimized content processing with minimal overhead
-' - Compatible with standard Ink compiler JSON output format
-' - Handles complex nested structures including conditional logic
-'
 Namespace sdk_games.parsers.ink
-
-#Import "<stdlib>"
-
-Using stdlib.io.json
-Using stdlib.collections
 
 '-------------------------------------------------
 ' InkRuntime - Implements the Ink virtual machine (runtime)
@@ -70,6 +27,12 @@ Using stdlib.collections
 ' - Modular design for easy integration with other components.
 ' - Uses stdlib for JSON parsing and data management.
 '
+
+#Import "<stdlib>"
+
+Using stdlib.io.json
+Using stdlib.collections
+
 '-------------------------------------------------
 ' InkRuntime Class Definition
 '-------------------------------------------------
