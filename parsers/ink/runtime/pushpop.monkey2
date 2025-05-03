@@ -33,6 +33,6 @@ Namespace sdk_games.parsers.ink
 
 Enum PushPopType
 	Tunnel
-	Routine
-	RoutineEvaluationFromGame
+	Func
+	FuncEvaluationFromGame
 End
