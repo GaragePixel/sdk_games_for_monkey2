@@ -48,18 +48,14 @@ Namespace sdk_games.parsers.ink
 '
 '===============================================================================
 
+Using stdlib.stringio
+
 Class Path Extends RuntimeObject
 
-Protected
-
-	Global ParentId:="^"
-	
-Public
+	Const ParentId:="^"
 
 	' Path.Component Class - Represents an Individual Component of a Path
 	Class Component Extends RuntimeObject
-	
-	Public
 	
 		Field index:Int
 		Field name:String
@@ -83,35 +79,50 @@ Public
 			Self.name = name
 			index = -1
 		End
+		
+		Function ToParent:Component()
+			Return New Component(Path.ParentId)
+		End 
 	
 		Method ToString:String()
 			If isIndex
-				Return index.ToString()
+				Return String(index)
 			Else
 				Return name
 			End
 		End
-	
+		
+		Operator To.String()
+			Return ToString()
+		End 
+
 		Method Equals:Bool(other:Path.Component)
-			If other.isIndex <> isIndex Return False
-			If isIndex
-				Return index = other.index
-			Else
-				Return name = other.name
-			End
+			If other <> Null 
+				If other.isIndex <> isIndex Return False
+				If isIndex
+					Return index = other.index
+				Else
+					Return name = other.name
+				End
+			End 
+			Return False
 		End
+		
+		Method GetHashCode:String()
+			If isIndex Return index 
+			Local hash := SHA256()
+			hash.Update(name)
+			Return hash.Digest()
+		End 
 	End
-
-Private
-
-	Field _components:List<Path.Component>
-	Field _componentsString:String
 
 Public
 
-	Field isParent:Bool
-
-	' Properties
+	Method GetComponent:Path.Component(index:Int)
+		Return _components[index]
+	End
+	
+	Field isRelative:Bool
 
 	Property head:Path.Component()
 		If _components.Length > 0
@@ -123,13 +134,19 @@ Public
 
 	Property tail:Path()
 		If _components.Length >= 2
-			Return New Path(_components[1..])
+			Local tailComponents := New List<PathComponent>()
+			For Local i:Int = 1 Until _components.Length
+				tailComponents.Add(_components[i])
+			End
+			Return New Path(tailComponents)
 		Else
-			Return Path.Self
+			Return selfpath 'TESTME
 		End
 	End
 
 	Property length:Int()
+		'Compared to c#, Aida is poetry: 
+		'	public int length { get { return _components.Count; } }
 		Return _components.Length
 	End
 
@@ -151,42 +168,6 @@ Public
 		Return False
 	End
 
-	Property componentsString:String()
-		If _componentsString = Null
-			_componentsString = String.Join(".", _components)
-			If isParent _componentsString = "." + _componentsString
-		End
-		Return _componentsString
-	End
-	Setter(value:String)
-		_components.Clear()
-		_componentsString = value
-
-		' Empty path, empty components
-		' (path is to root, like "/" in file system)
-		If _componentsString = "" Exit
-
-		' When components start with ".", it indicates a relative path, e.g.
-		'   .^.^.hello.5
-		' is equivalent to file system style path:
-		'  ../../hello/5
-		If _componentsString[0] = "."
-			isParent = True
-			_componentsString = _componentsString[1..]
-		Else
-			isParent = False
-		End
-
-		For Local str:String = EachIn _componentsString.Split(".")
-			Local idx:Int
-			If Int.TryParse(str, idx)
-				_components.Add(New Path.Component(idx))
-			Else
-				_components.Add(New Path.Component(str))
-			End
-		End
-	End
-
 	Method New()
 		_components = New List<Path.Component>()
 	End
@@ -197,16 +178,25 @@ Public
 		_components.AddRange(tail._components)
 	End
 
-	Method New(components:List<Path.Component>, parent:Bool = False)
+	Method New(components:List<Path.Component>, relative:Bool = False)
 		_components = New List<Path.Component>()
 		_components.AddRange(components)
-		isParent = parent
+		isRelative = relative
 	End
 
 	Method New(componentsString:String)
 		_components = New List<Path.Component>()
 		Self.componentsString = componentsString
 	End
+	
+	Property selfpath() 
+		'iDkP: I'm not sure if it's really the "Self" internal id system from inherence
+		'or something else, but if every non-tail paths are relative so maybe I can optimize
+		'it by using Self, making a better gc managing.
+		Local path:=New Path()
+		path.isRelative = True 
+		Return path
+	End 
 
 	Method PathByAppendingPath:Path(pathToAppend:Path)
 		Local result := New Path()
@@ -238,23 +228,72 @@ Public
 		Return result
 	End
 
+	Property componentsString:String()
+		If _componentsString = Null
+			_componentsString = StringJoin(".", _components) 'From stdlib.stringio
+			If isRelative _componentsString = "." + _componentsString
+		End
+		Return _componentsString
+	Setter(value:String)
+		_components.Clear()
+		_componentsString = value
+
+		' Empty path, empty components
+		' (path is to root, like "/" in file system)
+		If _componentsString = "" Exit
+
+		' When components start with ".", it indicates a relative path, e.g.
+		'   .^.^.hello.5
+		' is equivalent to file system style path:
+		'  ../../hello/5
+		If _componentsString[0] = "."
+			isRelative = True
+			'_componentsString = _componentsString[1..] 'REWROTE WITH THE FOLLOWING CODE
+			Local componentsString := New List<PathComponent>()
+			For Local i:Int = 1 Until _componentsString.Length
+				componentsString.Add(_components[i])
+			End
+			_componentsString=componentsString
+		Else
+			isRelative = False
+		End
+
+		For Local str:String = EachIn _componentsString.Split(".")
+			Local idx:Int
+			If Int.TryParse(str, idx)
+				_components.Add(New Path.Component(idx))
+			Else
+				_components.Add(New Path.Component(str))
+			End
+		End	
+	End
+	
+	Field _componentsString:String
+
 	Method ToString:String()
+		Return componentsString
+	End
+	
+	Operator To:String() 'For future better Aida code translation
 		Return componentsString
 	End
 
 	Method Equals:Bool(other:Path)
 		If other = Null Return False
 		If other._components.Length <> _components.Length Return False
-		If other.isParent <> isParent Return False
+		If other.isRelative  <> isRelative  Return False
 		Return other._components = _components
 	End
-
-	Method GetComponent:Path.Component(index:Int)
-		Return _components[index]
+	
+	Method GetHashCode:String()
+		' Generate a hash code using SHA-256 from stdlib
+		' Better way to make a hash code; DONE!
+		Local hash := SHA256()
+		hash.Update(componentsString)
+		Return hash.Digest()
 	End
 
 Private
 
 	Field _components:List<Path.Component> = Null
-
 End
