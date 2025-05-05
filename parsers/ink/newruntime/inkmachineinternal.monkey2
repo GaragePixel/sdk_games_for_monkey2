@@ -4,7 +4,16 @@
 'Using stdlib.io.filesystem
 Using stdlib.collections..
 
-Class Story
+Enum TypeElement 
+	Narrative 
+	MediaTrigger 
+	Choice 
+	Condition 
+	Branch 
+	Scene 
+End 
+
+Class Story 
 	
 	Method New(inkVersion:Int)
 		Version = inkVersion
@@ -32,17 +41,48 @@ End
 
 ' Abstract base class for all story elements
 Class StoryElement
+	
+	Property Type:TypeElement()
+		Return _type
+	End
+
+	Operator To:String()
+		
+		select _type
+			Case TypeElement.Narrative
+				Return "Narrative"
+			Case TypeElement.MediaTrigger 
+				Return "MediaTrigger"
+			Case TypeElement.Choice 
+				Return "Choice"
+			Case TypeElement.Condition 
+				Return "Condition"
+			Case TypeElement.Branch
+				Return "Branch"
+		End 
+		
+		Return "Scene"
+	End
+	
+	Protected
+	
+	Field _type:TypeElement
 End
 
 ' Narrative element (e.g., text prefixed with "^")
 Class Narrative Extends StoryElement
-
-	Field content:String
+	
+	Property Content:String()
+		Return _content 
+	End
 	
 	Method New(content:String)
-		Self.content = content
+		Super._type=TypeElement.Narrative
+		_content = content
 	End
 
+	Field _content:String
+	
 End
 
 ' Media trigger (e.g., images, music, or sound effects)
@@ -52,6 +92,7 @@ Class MediaTrigger Extends StoryElement
 	Field identifier:String
 	
 	Method New(mediaType:String, identifier:String)
+		Super._type=TypeElement.MediaTrigger
 		Self.mediaType = mediaType
 		Self.identifier = identifier
 	End
@@ -65,6 +106,7 @@ Class Choice Extends StoryElement
 	Field outcomeKey:String
 	
 	Method New(text:String, outcomeKey:String)
+		Super._type=TypeElement.Choice
 		Self.text = text
 		Self.outcomeKey = outcomeKey
 	End
@@ -79,6 +121,7 @@ Class Condition Extends StoryElement
 	Field value:Variant
 	
 	Method New(variable:String, comparator:String, value:Variant)
+		Super._type=TypeElement.Condition
 		Self.variable = variable
 		Self.comparator = comparator
 		Self.value = value
@@ -92,6 +135,7 @@ Class Branch Extends StoryElement
 	Field targetKey:String
 	
 	Method New(targetKey:String)
+		Super._type=TypeElement.Branch
 		Self.targetKey = targetKey
 	End
 
@@ -104,6 +148,7 @@ Class Scene Extends StoryElement
 	Field elements:List<StoryElement> = New List<StoryElement>()
 	
 	Method New(key:String)
+		Super._type=TypeElement.Scene
 		Self.key = key
 	End
 	
@@ -174,4 +219,87 @@ Function Main()
 	scene.AddElement(New Branch("continue_conversation"))
 	
 	Print("Story structure created successfully.")
+
+	' List all elements
+	ListStoryElements(story)
+End
+
+' Routine to recursively list all elements in a story
+Function ListStoryElements(book:Book)
+	Print("Listing Story Elements:")
+	Print("------------------------")
+	
+	' Get the root story object
+	Local story:Story = book.story
+	
+	' Iterate over all root elements in the story
+	For Local element:StoryElement = Eachin story.Root
+		PrintElement(element, 0)
+	End
+End
+
+Function CreateIntendationToken:String(indentLevel:Int)
+	Local indent:String
+	For Local i:Int = 0 Until indentLevel
+		indent += "\t"
+	End	
+	Return indent
+End
+
+
+' Recursive function to print details of a StoryElement and its children
+Function PrintElement(element:StoryElement, indentLevel:Int)
+	Local indent:String = CreateIntendationToken(indentLevel) ' Create appropriate indentation
+	
+	Local type:=element.Type
+	Print element
+	'Print type 
+	
+	Select type
+		Case TypeElement.Narrative
+			Local narrative:= element
+			Print(indent + "Narrative: " + narrative.content)
+		Case TypeElement.MediaTrigger
+			Local media:MediaTrigger = element
+			Print(indent + "MediaTrigger: " + media.mediaType + " (" + media.identifier + ")")
+		Case TypeElement.Choice
+			Local choice:Choice = element
+			Print(indent + "Choice: " + choice.text + " (Outcome: " + choice.outcomeKey + ")")
+		Case TypeElement.Condition
+			Local condition:Condition = element
+			Print(indent + "Condition: " + condition.variable + " " + condition.comparator + " " + condition.value.ToString())
+		Case TypeElement.Branch
+			Local branch:Branch = element
+			Print(indent + "Branch: -> " + branch.targetKey)
+		Case TypeElement.Scene
+			Local scene:Scene = element
+			Print(indent + "Scene: " + scene.key)
+			' Recursively print all elements in the scene
+			For Local child:StoryElement = Eachin scene.elements
+				PrintElement(child, indentLevel + 1)
+			End
+		Default
+			Print(indent + "Unknown Element")
+	End
+	
+End
+
+' Example usage
+Function PrintProject()
+	' Create a sample story
+	Local story:Book = New Book(21)
+	
+	' Add some elements
+	story.AddNarrative("The summer heat shimmered over the pavement.")
+	story.AddMediaTrigger("image", "city_summer_afternoon")
+	story.AddChoice("Pretend not to notice", "notice_nothing")
+	story.AddCondition("trust_level", "==", 1)
+	
+	' Add a scene and nested elements
+	Local scene:Scene = story.AddScene("notice_nothing")
+	scene.AddElement(New Narrative("I blinked and kept my expression neutral."))
+	scene.AddElement(New Branch("continue_conversation"))
+	
+	' List all elements
+	ListStoryElements(story)
 End
