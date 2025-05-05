@@ -45,70 +45,157 @@ Namespace sdk_games.parsers.ink
 '===============================================================================
 #End
 
-' Simple JSON writer for Ink runtime
-Class SimpleJson
-	' Write a runtime object to JSON format
-	Method WriteRuntimeObject:String(obj:InkObject)
-		Local writer:SimpleJsonWriter = New SimpleJsonWriter()
-		writer.WriteObject(obj)
-		Return writer.ToString()
+Namespace sdk_games.parsers.ink
+
+' Static class for handling JSON serialization of Ink runtime objects
+Class JsonSerialisation
+	' Map of control command types to their string representation in JSON
+	Field _controlCommandNames:String[]
+	
+	Method New()
+		_controlCommandNames = New String[ControlCommand.CommandType.TOTAL_VALUES]
+		
+		_controlCommandNames[ControlCommand.CommandType.EvalStart] = "ev"
+		_controlCommandNames[ControlCommand.CommandType.EvalOutput] = "out"
+		_controlCommandNames[ControlCommand.CommandType.EvalEnd] = "/ev"
+		_controlCommandNames[ControlCommand.CommandType.Duplicate] = "du"
+		_controlCommandNames[ControlCommand.CommandType.PopEvaluatedValue] = "pop"
+		_controlCommandNames[ControlCommand.CommandType.PopFunction] = "~ret"
+		_controlCommandNames[ControlCommand.CommandType.PopTunnel] = "->->"
+		_controlCommandNames[ControlCommand.CommandType.BeginString] = "str"
+		_controlCommandNames[ControlCommand.CommandType.EndString] = "/str"
+		_controlCommandNames[ControlCommand.CommandType.NoOp] = "nop"
+		_controlCommandNames[ControlCommand.CommandType.ChoiceCount] = "choiceCnt"
+		_controlCommandNames[ControlCommand.CommandType.Turns] = "turn"
+		_controlCommandNames[ControlCommand.CommandType.TurnsSince] = "turns"
+		_controlCommandNames[ControlCommand.CommandType.ReadCount] = "readc"
+		_controlCommandNames[ControlCommand.CommandType.Random] = "rnd"
+		_controlCommandNames[ControlCommand.CommandType.SeedRandom] = "srnd"
+		_controlCommandNames[ControlCommand.CommandType.VisitIndex] = "visit"
+		_controlCommandNames[ControlCommand.CommandType.SequenceShuffleIndex] = "seq"
+		_controlCommandNames[ControlCommand.CommandType.StartThread] = "thread"
+		_controlCommandNames[ControlCommand.CommandType.Done] = "done"
+		_controlCommandNames[ControlCommand.CommandType.Ends] = "end"
+		_controlCommandNames[ControlCommand.CommandType.ListFromInt] = "listInt"
+		_controlCommandNames[ControlCommand.CommandType.ListRange] = "range"
+		_controlCommandNames[ControlCommand.CommandType.ListRandom] = "lrnd"
+		_controlCommandNames[ControlCommand.CommandType.BeginTag] = "#"
+		_controlCommandNames[ControlCommand.CommandType.EndTag] = "/#"
+		
+		' Verify all commands are accounted for
+		For Local i:Int = 0 Until ControlCommand.CommandType.TOTAL_VALUES
+			If _controlCommandNames[i] = Null
+				Error("Control command not accounted for in serialization: " + i)
+			End
+		Next
 	End
 	
-	' Convert a JSON string back to a runtime object
-	Method JTokenToRuntimeObject:InkObject(token:JsonValue, storyContext:Story = Null)
-		If token.IsString() Then
+	' Convert JSON token to runtime object
+	Method JTokenToRuntimeObject:RuntimeObject(token:JsonValue, storyContext:Story = Null)
+		If token.IsString() 
 			Return New StringValue(token.AsString())
 		End
 		
-		If token.IsNumber() Then
-			' Different handling for int vs float
-			Local str:String = token.ToString()
-			If str.Contains(".") Then
+		If token.IsNumber() 
+			Local numStr:String = token.ToString()
+			If numStr.Contains(".") 
 				Return New FloatValue(token.AsFloat())
 			Else
 				Return New IntValue(token.AsInt())
 			End
 		End
 		
-		If token.IsBool() Then
+		If token.IsBool() 
 			Return New BoolValue(token.AsBool())
 		End
 		
-		If token.IsNull() Then
+		If token.IsNull() 
 			Return Null
 		End
 		
-		If token.IsObject() Then
+		If token.IsObject() 
 			Local obj:JsonObject = token.AsObject()
 			
 			' Divert target value
-			If obj.Contains("^->") Then
+			If obj.Contains("^->") 
 				Return New DivertTargetValue(New Path(obj.GetItem("^->").AsString()))
 			End
 			
 			' Variable pointer value
-			If obj.Contains("^var") Then
+			If obj.Contains("^var") 
 				Local varPtr:VariablePointerValue = New VariablePointerValue(obj.GetItem("^var").AsString())
-				If obj.Contains("ci") Then
+				If obj.Contains("ci") 
 					varPtr.contextIndex = obj.GetItem("ci").AsInt()
 				End
 				Return varPtr
 			End
 			
+			' Divert
+			If obj.Contains("->") 
+				Local divert:Divert = New Divert()
+				divert.targetPathString = obj.GetItem("->").AsString()
+				
+				If obj.Contains("var") 
+					divert.variableDivertName = obj.GetItem("var").AsString()
+				End
+				
+				If obj.Contains("c") 
+					divert.isConditional = obj.GetItem("c").AsBool()
+				End
+				
+				If obj.Contains("f") 
+					Local externalArgs:Int = obj.GetItem("f").AsInt()
+					divert.externalArgs = externalArgs
+				End
+				
+				Return divert
+			End
+			
+			' Choice point
+			If obj.Contains("*") 
+				Local choice:ChoicePoint = New ChoicePoint()
+				choice.pathStringOnChoice = obj.GetItem("*").AsString()
+				
+				If obj.Contains("flg") 
+					choice.flags = obj.GetItem("flg").AsInt()
+				End
+				
+				Return choice
+			End
+			
+			' Variable reference
+			If obj.Contains("VAR?") 
+				Return New VariableReference(obj.GetItem("VAR?").AsString())
+			End
+			
+			' Variable assignment
+			If obj.Contains("VAR=") 
+				Local varName:String = obj.GetItem("VAR=").AsString()
+				Local isNewDecl:Bool = False
+				If obj.Contains("re") 
+					isNewDecl = obj.GetItem("re").AsBool()
+				End
+				Return New VariableAssignment(varName, isNewDecl)
+			End
+			
+			' Tag
+			If obj.Contains("#") 
+				Return New Tag(obj.GetItem("#").AsString())
+			End
+			
 			' List value
-			If obj.Contains("list") Then
+			If obj.Contains("list") 
 				Local listContent:JsonObject = obj.GetItem("list").AsObject()
 				Local rawList:InkList = New InkList()
 				
 				For Local nameToVal := Eachin listContent
-					Local item:InkListItem = InkListItem.Null
+					Local item:InkListItem
 					
 					Local nameParts:String[] = nameToVal.Key.Split(".")
-					If nameParts.Length > 0 Then
+					If nameParts.Length >= 2 
+						item = New InkListItem(nameParts[0], nameParts[1])
+					Elseif nameParts.Length == 1 
 						item = New InkListItem(nameParts[0])
-						If nameParts.Length > 1 Then
-							item.itemName = nameParts[1]
-						End
 					End
 					
 					Local val:Int = nameToVal.Value.AsInt()
@@ -118,203 +205,73 @@ Class SimpleJson
 				Return New ListValue(rawList)
 			End
 			
-			' Divert
-			If obj.Contains("->") Then
-				Local divert:Divert = New Divert()
-				divert.targetPathString = obj.GetItem("->").AsString()
-				
-				If obj.Contains("var") Then
-					divert.variableDivertName = obj.GetItem("var").AsString()
-				End
-				
-				If obj.Contains("c") Then
-					divert.isConditional = obj.GetItem("c").AsBool()
-				End
-				
-				If obj.Contains("f") Then
-					Local externalArgs:Int = obj.GetItem("f").AsInt()
-					divert.externalArgs = externalArgs
-				End
-				
-				Return divert
-			End
+			' Glue
+			If obj.Contains("G<")  Return New Glue(Glue.GlueType.Left)
+			If obj.Contains("G>")  Return New Glue(Glue.GlueType.Right)
+			If obj.Contains("G=")  Return New Glue(Glue.GlueType.Bidirectional)
 			
-			' Choice
-			If obj.Contains("*") Then
-				Local choice:ChoicePoint = New ChoicePoint()
-				choice.pathStringOnChoice = obj.GetItem("*").AsString()
-				
-				If obj.Contains("flg") Then
-					choice.flags = obj.GetItem("flg").AsInt()
+			' Control commands - check for each possible command
+			For Local i:Int = 0 Until ControlCommand.CommandType.TOTAL_VALUES
+				Local cmdName:String = _controlCommandNames[i]
+				If cmdName <> Null And obj.Contains(cmdName) 
+					Return New ControlCommand(i)
 				End
-				
-				Return choice
-			End
-			
-			' Tag
-			If obj.Contains("#") Then
-				Local tag:Tag = New Tag(obj.GetItem("#").AsString())
-				Return tag
-			End
-			
-			' Variable reference
-			If obj.Contains("VAR?") Then
-				Return New VariableReference(obj.GetItem("VAR?").AsString())
-			End
-			
-			' Variable assignment
-			If obj.Contains("VAR=") Then
-				Local varName:String = obj.GetItem("VAR=").AsString()
-				Local isNewDecl:Bool = False
-				If obj.Contains("re") Then
-					isNewDecl = obj.GetItem("re").AsBool()
-				End
-				Return New VariableAssignment(varName, isNewDecl)
-			End
+			Next
 			
 			' Void
-			If obj.Contains("void") Then
+			If obj.Contains("void") 
 				Return New Void()
 			End
 			
-			' Control commands
-			If obj.Contains("^->") Then
-				Return New ControlCommand(ControlCommand.CommandType.PushTunnel)
-			End
-			
-			If obj.Contains("->t->") Then
-				Return New ControlCommand(ControlCommand.CommandType.TunnelOnwards)
-			End
-			
-			If obj.Contains("str") Then
-				Return New ControlCommand(ControlCommand.CommandType.BeginString)
-			End
-			
-			If obj.Contains("/str") Then
-				Return New ControlCommand(ControlCommand.CommandType.EndString)
-			End
-			
-			If obj.Contains("ev") Then
-				Return New ControlCommand(ControlCommand.CommandType.EvalStart)
-			End
-			
-			If obj.Contains("/ev") Then
-				Return New ControlCommand(ControlCommand.CommandType.EvalEnd)
-			End
-			
-			If obj.Contains("out") Then
-				Return New ControlCommand(ControlCommand.CommandType.EvalOutput)
-			End
-			
-			If obj.Contains("du") Then
-				Return New ControlCommand(ControlCommand.CommandType.Duplicate)
-			End
-			
-			If obj.Contains("pop") Then
-				Return New ControlCommand(ControlCommand.CommandType.PopEvaluatedValue)
-			End
-			
-			If obj.Contains("/pop") Then
-				Return New ControlCommand(ControlCommand.CommandType.PopFunction)
-			End
-			
-			If obj.Contains("~ret") Then
-				Return New ControlCommand(ControlCommand.CommandType.PopTunnel)
-			End
-			
-			If obj.Contains("/->") Then
-				Return New ControlCommand(ControlCommand.CommandType.PopTunnel)
-			End
-			
-			If obj.Contains("nop") Then
-				Return New ControlCommand(ControlCommand.CommandType.NoOp)
-			End
-			
-			If obj.Contains("choiceCnt") Then
-				Return New ControlCommand(ControlCommand.CommandType.ChoiceCount)
-			End
-			
-			If obj.Contains("turns") Then
-				Return New ControlCommand(ControlCommand.CommandType.TurnsSince)
-			End
-			
-			If obj.Contains("readc") Then
-				Return New ControlCommand(ControlCommand.CommandType.ReadCount)
-			End
-			
-			If obj.Contains("rnd") Then
-				Return New ControlCommand(ControlCommand.CommandType.Random)
-			End
-			
-			If obj.Contains("srnd") Then
-				Return New ControlCommand(ControlCommand.CommandType.SeedRandom)
-			End
-			
-			If obj.Contains("visit") Then
-				Return New ControlCommand(ControlCommand.CommandType.VisitIndex)
-			End
-			
-			If obj.Contains("seq") Then
-				Return New ControlCommand(ControlCommand.CommandType.SequenceShuffleIndex)
-			End
-			
-			If obj.Contains("thread") Then
-				Return New ControlCommand(ControlCommand.CommandType.StartThread)
-			End
-			
-			If obj.Contains("done") Then
-				Return New ControlCommand(ControlCommand.CommandType.Done)
-			End
-			
-			If obj.Contains("end") Then
-				Return New ControlCommand(ControlCommand.CommandType.End)
-			End
-			
-			If obj.Contains("listInt") Then
-				Return New ControlCommand(ControlCommand.CommandType.ListFromInt)
-			End
-			
-			If obj.Contains("range") Then
-				Return New ControlCommand(ControlCommand.CommandType.ListRange)
-			End
-			
-			If obj.Contains("lrnd") Then
-				Return New ControlCommand(ControlCommand.CommandType.ListRandom)
+			' Native function
+			If obj.Contains("^") 
+				Local name:String = obj.GetItem("^").AsString()
+				Return NativeFunctionCall.CallWithName(name)
 			End
 			
 			Error("Failed to parse token: " + token.ToString())
 		End
 		
-		If token.IsArray() Then
-			Local array:JsonArray = token.AsArray()
+		If token.IsArray() 
+			Local arr:JsonArray = token.AsArray()
 			
-			If array.Length == 0 Then
+			If arr.Length = 0 
 				Return New Container()
 			End
 			
-			' Get content array
-			Local contentList:List<InkObject> = New List<InkObject>()
+			' Special case: multiline block
+			If arr.Length = 3 
+				And arr.GetItem(0).IsInt() 
+				And arr.GetItem(0).AsInt() = 0 
+				And arr.GetItem(1).IsInt() 
+				And arr.GetItem(2).IsString() 
+					Return New StringValue(arr.GetItem(2).AsString())
+			End
 			
-			For Local i:Int = 0 Until array.Length - 1
-				Local obj:InkObject = JTokenToRuntimeObject(array.GetItem(i), storyContext)
-				If obj <> Null Then contentList.AddLast(obj)
+			' Get content array
+			Local container:Container = New Container()
+			Local contentList:List<RuntimeObject> = New List<RuntimeObject>()
+			
+			For Local i:Int = 0 Until arr.Length - 1
+				Local obj:RuntimeObject = JTokenToRuntimeObject(arr.GetItem(i), storyContext)
+				If obj <> Null  contentList.AddLast(obj)
 			Next
 			
-			Local container:Container = New Container()
-			container.AddContents(contentList)
+			container.AddContent(contentList)
 			
 			' Final object is either a null terminator or a dictionary of named content
-			Local terminatorObj:JsonValue = array.GetItem(array.Length - 1)
-			If Not terminatorObj.IsNull() Then
+			Local terminatorObj:JsonValue = arr.GetItem(arr.Length - 1)
+			If Not terminatorObj.IsNull() 
 				Local namedContentObj:JsonObject = terminatorObj.AsObject()
 				
 				For Local key:String = Eachin namedContentObj.Keys
-					If key = "#f" Then
+					If key = "#f" 
 						container.countFlags = namedContentObj.GetItem(key).AsInt()
-					ElseIf key = "#n" Then
+					Elseif key = "#n" 
 						container.name = namedContentObj.GetItem(key).AsString()
 					Else
-						Local namedContainer:Container = JArrayToContainer(namedContentObj.GetItem(key).AsArray())
+						Local namedContainer:Container = 
+							Container(JTokenToRuntimeObject(namedContentObj.GetItem(key)))
 						container.AddToNamedContent(key, namedContainer)
 					End
 				Next
@@ -323,55 +280,430 @@ Class SimpleJson
 			Return container
 		End
 		
-		Error("Unknown token type: " + token)
+		Error("Failed to parse token: " + token.ToString())
 		Return Null
 	End
 	
-	' Convert a JSON array to a Container
-	Method JArrayToContainer:Container(jArray:JsonArray, skipLast:Bool = False)
-		Local container:Container = New Container()
-		If jArray.Length == 0 Return container
-		
+	' Convert a JSON array to a list of runtime objects
+	Method JArrayToRuntimeObjList:List<RuntimeObject>(jArray:JsonArray, skipLast:Bool = False)
 		Local count:Int = jArray.Length
-		If skipLast Then count -= 1
+		If skipLast  count -= 1
 		
-		' Add content
+		Local list:List<RuntimeObject> = New List<RuntimeObject>()
+		
 		For Local i:Int = 0 Until count
-			Local obj:InkObject = JTokenToRuntimeObject(jArray.GetItem(i))
-			container.AddContent(obj)
+			Local obj:RuntimeObject = JTokenToRuntimeObject(jArray.GetItem(i))
+			list.AddLast(obj)
 		Next
 		
-		' Process named content if present
-		If Not skipLast Then
-			Local terminatorObj:JsonValue = jArray.GetItem(jArray.Length - 1)
-			If Not terminatorObj.IsNull() Then
-				Local namedContentObj:JsonObject = terminatorObj.AsObject()
-				
-				For Local key:String = Eachin namedContentObj.Keys
-					If key = "#f" Then
-						container.countFlags = namedContentObj.GetItem(key).AsInt()
-					ElseIf key = "#n" Then
-						container.name = namedContentObj.GetItem(key).AsString()
-					Else
-						Local namedContainer:Container = JArrayToContainer(namedContentObj.GetItem(key).AsArray())
-						container.AddToNamedContent(key, namedContainer)
-					End
-				Next
-			End
+		Return list
+	End
+	
+	' Convert a JSON array to a Container
+	Method JArrayToContainer:Container(jArray:JsonArray)
+		Local container:Container = New Container()
+		
+		Local content:List<RuntimeObject> = JArrayToRuntimeObjList(jArray, True)
+		container.AddContent(content)
+		
+		' Final object is either a null terminator or a dictionary of named content
+		Local terminatorObj:JsonValue = jArray.GetItem(jArray.Length - 1)
+		If Not terminatorObj.IsNull() 
+			Local namedContentObj:JsonObject = terminatorObj.AsObject()
+			
+			For Local key:String = Eachin namedContentObj.Keys
+				If key = "#f" 
+					container.countFlags = namedContentObj.GetItem(key).AsInt()
+				Elseif key = "#n" 
+					container.name = namedContentObj.GetItem(key).AsString()
+				Else
+					Local namedContentArray:JsonArray = namedContentObj.GetItem(key).AsArray()
+					Local namedContainer:Container = JArrayToContainer(namedContentArray)
+					container.AddToNamedContent(key, namedContainer)
+				End
+			Next
 		End
 		
 		Return container
 	End
+	
+	' Write a runtime object to JSON
+	Method WriteRuntimeObject:Void(writer:SimpleJsonWriter, obj:RuntimeObject)
+		Local objType:TypeInfo = TypeInfo.ForObject(obj)
+		
+		Select True
+			Case objType.ExtendsType(TypeInfo.ForName("String"))
+				writer.WriteStringValue(String(obj))
+			
+			Case objType.ExtendsType(TypeInfo.ForName("Int"))
+				writer.WriteIntValue(Int(obj))
+			
+			Case objType.ExtendsType(TypeInfo.ForName("Float"))
+				writer.WriteFloatValue(Float(obj))
+			
+			Case objType.ExtendsType(TypeInfo.ForName("Bool"))
+				writer.WriteBoolValue(Bool(obj))
+			
+			Case objType.ExtendsType(TypeInfo.ForName("InkList"))
+				WriteInkList(writer, InkList(obj))
+			
+			Case objType.ExtendsType(TypeInfo.ForName("RuntimeObject"))
+				WriteRuntimeObject(writer, RuntimeObject(obj))
+			
+			Case obj = Null
+				writer.WriteNullValue()
+			
+			Default
+				Error("Failed to write object of type: " + objType.Name)
+		End
+	End
+	
+	' Write a runtime Ink object to JSON
+	Method WriteRuntimeObject:Void(writer:SimpleJsonWriter, obj:RuntimeObject)
+		Local objType:TypeInfo = TypeInfo.ForObject(obj)
+		
+		Select True
+			Case objType.ExtendsType(TypeInfo.ForName("Container"))
+				WriteRuntimeContainer(writer, Container(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Divert"))
+				WriteDivert(writer, Divert(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Value"))
+				WriteValue(writer, Value(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("ControlCommand"))
+				WriteControlCommand(writer, ControlCommand(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("VariableReference"))
+				WriteVariableReference(writer, VariableReference(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("VariableAssignment"))
+				WriteVariableAssignment(writer, VariableAssignment(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("ChoicePoint"))
+				WriteChoicePoint(writer, ChoicePoint(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Choice"))
+				WriteChoice(writer, Choice(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Glue"))
+				WriteGlue(writer, Glue(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Tag"))
+				WriteTag(writer, Tag(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("NativeFunctionCall"))
+				WriteNativeFunctionCall(writer, NativeFunctionCall(obj))
+				
+			Case objType.ExtendsType(TypeInfo.ForName("Void"))
+				WriteVoid(writer)
+				
+			Default
+				Error("Failed to write object of type: " + objType.Name)
+		End
+	End
+	
+	' Write a Value object to JSON
+	Method WriteValue:Void(writer:SimpleJsonWriter, val:Value)
+		Local objType:TypeInfo = TypeInfo.ForObject(val)
+		
+		Select True
+			Case objType.ExtendsType(TypeInfo.ForName("IntValue"))
+				writer.WriteIntValue(IntValue(val).value)
+				
+			Case objType.ExtendsType(TypeInfo.ForName("FloatValue"))
+				writer.WriteFloatValue(FloatValue(val).value)
+				
+			Case objType.ExtendsType(TypeInfo.ForName("StringValue"))
+				writer.WriteStringValue(StringValue(val).value)
+				
+			Case objType.ExtendsType(TypeInfo.ForName("BoolValue"))
+				writer.WriteBoolValue(BoolValue(val).value)
+				
+			Case objType.ExtendsType(TypeInfo.ForName("ListValue"))
+				WriteInkList(writer, ListValue(val).value)
+				
+			Case objType.ExtendsType(TypeInfo.ForName("DivertTargetValue"))
+				writer.WriteObjectStart()
+				writer.WritePropertyName("^->")
+				writer.WriteStringValue(DivertTargetValue(val).value.ToString())
+				writer.WriteObjectEnd()
+				
+			Case objType.ExtendsType(TypeInfo.ForName("VariablePointerValue"))
+				Local varPtr:VariablePointerValue = VariablePointerValue(val)
+				writer.WriteObjectStart()
+				writer.WritePropertyName("^var")
+				writer.WriteStringValue(varPtr.value)
+				If varPtr.contextIndex <> -1 
+					writer.WritePropertyName("ci")
+					writer.WriteIntValue(varPtr.contextIndex)
+				End
+				writer.WriteObjectEnd()
+				
+			Default
+				Error("Failed to write value of type: " + objType.Name)
+		End
+	End
+	
+	' Write a Container to JSON
+	Method WriteRuntimeContainer:Void(writer:SimpleJsonWriter, container:Container, withoutName:Bool = False)
+		writer.WriteArrayStart()
+		
+		For Local obj:RuntimeObject = Eachin container.content
+			WriteRuntimeObject(writer, obj)
+		Next
+		
+		' Check if we need a terminator object
+		Local hasTerminator:Bool = container.namedOnlyContent <> Null Or 
+			container.countFlags > 0 Or 
+			(container.name <> Null And Not withoutName)
+			
+		If hasTerminator 
+			writer.WriteObjectStart()
+			
+			If container.namedOnlyContent <> Null 
+				For Local namedContent:= Eachin container.namedOnlyContent
+					writer.WritePropertyName(namedContent.Key)
+					WriteRuntimeContainer(writer, namedContent.Value, True)
+				Next
+			End
+			
+			If container.countFlags > 0 
+				writer.WritePropertyName("#f")
+				writer.WriteIntValue(container.countFlags)
+			End
+			
+			If container.name <> Null And Not withoutName 
+				writer.WritePropertyName("#n")
+				writer.WriteStringValue(container.name)
+			End
+			
+			writer.WriteObjectEnd()
+		Else
+			writer.WriteNullValue()
+		End
+		
+		writer.WriteArrayEnd()
+	End
+	
+	' Write a Divert to JSON
+	Method WriteDivert:Void(writer:SimpleJsonWriter, divert:Divert)
+		writer.WriteObjectStart()
+		
+		If divert.targetPathString <> Null 
+			writer.WritePropertyName("->")
+			writer.WriteStringValue(divert.targetPathString)
+		Else
+			writer.WritePropertyName("->")
+			writer.WriteStringValue("")
+		End
+		
+		If divert.isExternal 
+			writer.WritePropertyName("externalArgs")
+			writer.WriteIntValue(divert.externalArgs)
+		End
+		
+		If divert.variableDivertName <> Null 
+			writer.WritePropertyName("var")
+			writer.WriteStringValue(divert.variableDivertName)
+		End
+		
+		If divert.isConditional 
+			writer.WritePropertyName("c")
+			writer.WriteBoolValue(divert.isConditional)
+		End
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a ChoicePoint to JSON
+	Method WriteChoicePoint:Void(writer:SimpleJsonWriter, choicePoint:ChoicePoint)
+		writer.WriteObjectStart()
+		
+		writer.WritePropertyName("*")
+		writer.WriteStringValue(choicePoint.pathStringOnChoice)
+		
+		writer.WritePropertyName("flg")
+		writer.WriteIntValue(choicePoint.flags)
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a Choice to JSON
+	Method WriteChoice:Void(writer:SimpleJsonWriter, choice:Choice)
+		writer.WriteObjectStart()
+		
+		writer.WritePropertyName("text")
+		writer.WriteStringValue(choice.text)
+		
+		If choice.targetPath <> Null 
+			writer.WritePropertyName("->")
+			writer.WriteStringValue(choice.targetPath.ToString())
+		End
+		
+		writer.WritePropertyName("index")
+		writer.WriteIntValue(choice.index)
+		
+		If choice.sourcePath <> Null 
+			writer.WritePropertyName("originalThread")
+			writer.WriteStringValue(choice.sourcePath.ToString())
+		End
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a VariableReference to JSON
+	Method WriteVariableReference:Void(writer:SimpleJsonWriter, variableRef:VariableReference)
+		writer.WriteObjectStart()
+		
+		If variableRef.pathStringForCount <> Null 
+			writer.WritePropertyName("CNT?")
+			writer.WriteStringValue(variableRef.pathStringForCount)
+		Else
+			writer.WritePropertyName("VAR?")
+			writer.WriteStringValue(variableRef.name)
+		End
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a VariableAssignment to JSON
+	Method WriteVariableAssignment:Void(writer:SimpleJsonWriter, variableAssignment:VariableAssignment)
+		writer.WriteObjectStart()
+		
+		writer.WritePropertyName("VAR=")
+		writer.WriteStringValue(variableAssignment.variableName)
+		
+		If variableAssignment.isNewDeclaration 
+			writer.WritePropertyName("re")
+			writer.WriteBoolValue(True)
+		End
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a Tag to JSON
+	Method WriteTag:Void(writer:SimpleJsonWriter, tag:Tag)
+		writer.WriteObjectStart()
+		writer.WritePropertyName("#")
+		writer.WriteStringValue(tag.text)
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a Glue to JSON
+	Method WriteGlue:Void(writer:SimpleJsonWriter, glue:Glue)
+		writer.WriteObjectStart()
+		Select glue.glueType
+			Case Glue.GlueType.Left
+				writer.WritePropertyName("G<")
+				writer.WriteStringValue("")
+			Case Glue.GlueType.Right
+				writer.WritePropertyName("G>")
+				writer.WriteStringValue("")
+			Case Glue.GlueType.Bidirectional
+				writer.WritePropertyName("G=")
+				writer.WriteStringValue("")
+		End
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a Control Command to JSON
+	Method WriteControlCommand:Void(writer:SimpleJsonWriter, command:ControlCommand)
+		writer.WriteObjectStart()
+		Local commandName:String = _controlCommandNames[command.commandType]
+		writer.WritePropertyName(commandName)
+		writer.WriteIntValue(0) ' The value doesn't matter, only the key
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a NativeFunctionCall to JSON
+	Method WriteNativeFunctionCall:Void(writer:SimpleJsonWriter, nativeFunc:NativeFunctionCall)
+		writer.WriteObjectStart()
+		writer.WritePropertyName("^")
+		writer.WriteStringValue(nativeFunc.name)
+		writer.WriteObjectEnd()
+	End
+	
+	' Write Void to JSON
+	Method WriteVoid:Void(writer:SimpleJsonWriter)
+		writer.WriteObjectStart()
+		writer.WritePropertyName("void")
+		writer.WriteIntValue(0)
+		writer.WriteObjectEnd()
+	End
+	
+	' Write an InkList to JSON
+	Method WriteInkList:Void(writer:SimpleJsonWriter, list:InkList)
+		writer.WriteObjectStart()
+		
+		writer.WritePropertyName("list")
+		
+		writer.WriteObjectStart()
+		
+		For Local item := Eachin list
+			Local itemName:String
+			If item.Key.originName <> Null 
+				itemName = item.Key.originName
+			Else
+				itemName = "?"
+			End
+			
+			itemName += "." + item.Key.itemName
+			
+			writer.WritePropertyName(itemName)
+			writer.WriteIntValue(item.Value)
+		Next
+		
+		writer.WriteObjectEnd()
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a dictionary of runtime objects to JSON
+	Method WriteDictionaryRuntimeObjs:Void(writer:SimpleJsonWriter, dictionary:StringMap<RuntimeObject>)
+		writer.WriteObjectStart()
+		
+		For Local keyVal := Eachin dictionary
+			writer.WritePropertyName(keyVal.Key)
+			WriteRuntimeObject(writer, keyVal.Value)
+		Next
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Write a list of runtime objects to JSON
+	Method WriteListRuntimeObjs:Void(writer:SimpleJsonWriter, list:List<RuntimeObject>)
+		writer.WriteArrayStart()
+		
+		For Local obj := Eachin list
+			WriteRuntimeObject(writer, obj)
+		Next
+		
+		writer.WriteArrayEnd()
+	End
+	
+	' Write an integer dictionary to JSON
+	Method WriteIntDictionary:Void(writer:SimpleJsonWriter, dict:StringMap<Int>)
+		writer.WriteObjectStart()
+		
+		For Local keyVal := Eachin dict
+			writer.WritePropertyName(keyVal.Key)
+			writer.WriteIntValue(keyVal.Value)
+		Next
+		
+		writer.WriteObjectEnd()
+	End
 End
 
-' Simple JSON writer for story state
+' Simple JSON writer for Ink serialization
 Class SimpleJsonWriter
 	Field _writer:StringWriter = New StringWriter()
-	Field _stateObjects:List<InkObject> = New List<InkObject>()
+	Field _isFirstItem:Stack<Bool> = New Stack<Bool>()
 	Field _indent:Int = 0
-	Field _prettyPrint:Bool = True
+	Field _prettyPrint:Bool
 	
-	Method New(prettyPrint:Bool = True)
+	Method New(prettyPrint:Bool = False)
 		_prettyPrint = prettyPrint
 	End
 	
@@ -379,403 +711,102 @@ Class SimpleJsonWriter
 		Return _writer.ToString()
 	End
 	
-	Method WriteObject:Void(value:InkObject)
-		If value Is Container Then
-			WriteRuntimeContainer(Container(value))
-		ElseIf value Is Divert Then
-			WriteDivert(Divert(value))
-		ElseIf value Is Value Then
-			Write(Value(value))
-		ElseIf value Is ControlCommand Then
-			WriteControlCommand(ControlCommand(value))
-		ElseIf value Is VariableReference Then
-			WriteVariableReference(VariableReference(value))
-		ElseIf value Is VariableAssignment Then
-			WriteVariableAssignment(VariableAssignment(value))
-		ElseIf value Is ChoicePoint Then
-			WriteChoicePoint(ChoicePoint(value))
-		ElseIf value Is Tag Then
-			WriteTag(Tag(value))
-		ElseIf value Is Void Then
-			Write("{\"void\":0}")
-		Else
-			Error("Failed to write runtime object: " + value)
-		End
-	End
-	
 	Method WriteObjectStart:Void()
-		StartNewObject(True)
+		WriteCommaIfNeeded()
+		_isFirstItem.Push(True)
+		_writer.Write("{")
 		_indent += 1
+		If _prettyPrint  _writer.Write("~n")
 	End
 	
 	Method WriteObjectEnd:Void()
 		_indent -= 1
-		WriteIndent()
+		If _prettyPrint 
+			_writer.Write("~n")
+			WriteIndent()
+		End
 		_writer.Write("}")
+		_isFirstItem.Pop()
 	End
 	
 	Method WriteArrayStart:Void()
-		StartNewObject(True)
+		WriteCommaIfNeeded()
+		_isFirstItem.Push(True)
+		_writer.Write("[")
 		_indent += 1
+		If _prettyPrint  _writer.Write("~n")
 	End
 	
 	Method WriteArrayEnd:Void()
 		_indent -= 1
-		WriteIndent()
+		If _prettyPrint 
+			_writer.Write("~n")
+			WriteIndent()
+		End
 		_writer.Write("]")
+		_isFirstItem.Pop()
 	End
 	
 	Method WritePropertyName:Void(name:String)
-		StartNewObject(True)
+		WriteCommaIfNeeded()
 		WriteIndent()
-		_writer.Write("~q" + name + "~q: ")
+		_writer.Write("~q" + EscapeString(name) + "~q:")
+		If _prettyPrint  _writer.Write(" ")
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
 	End
 	
-	Method WritePropertyStart:Void(name:String)
-		WritePropertyName(name)
-	End
-	
-	Method WritePropertyEnd:Void()
-		' No action needed
-	End
-	
-	Method WritePropertyNameValue:Void(name:String, value:Object)
-		WritePropertyName(name)
-		WriteRuntimeObject(value)
-	End
-	
-	Method WriteProperty:Void(name:String, value:Int)
-		WritePropertyName(name)
-		Write(value)
-	End
-	
-	Method WriteProperty:Void(name:String, value:Float)
-		WritePropertyName(name)
-		Write(value)
-	End
-	
-	Method WriteProperty:Void(name:String, value:String)
-		WritePropertyName(name)
-		Write(value)
-	End
-	
-	Method WriteProperty:Void(name:String, value:Bool)
-		WritePropertyName(name)
-		Write(value)
-	End
-	
-	Method WriteProperty:Void(name:String, value:InkObject)
-		WritePropertyName(name)
-		WriteRuntimeObject(value)
-	End
-	
-	Method WriteRuntimeObject:Void(value:Object)
-		If value Is String Then
-			Write(String(value))
-		ElseIf value Is Int Then
-			Write(Int(value))
-		ElseIf value Is Float Then
-			Write(Float(value))
-		ElseIf value Is Bool Then
-			Write(Bool(value))
-		ElseIf value Is InkList Then
-			WriteInkList(InkList(value))
-		ElseIf value Is InkObject Then
-			WriteObject(InkObject(value))
-		ElseIf value = Null Then
-			WriteNull()
-		Else
-			Error("Failed to write object: " + value)
-		End
-	End
-	
-	Method WriteRuntimeContainer:Void(container:Container, withoutName:Bool = False)
-		WriteArrayStart()
-		
-		For Local obj:= Eachin container.content
-			WriteIndent()
-			WriteRuntimeObject(obj)
-		Next
-		
-		' Write terminator object
-		Local hasTerminator:Bool = container.namedOnlyContent <> Null Or container.countFlags > 0 Or (container.name <> Null And Not withoutName)
-		
+	Method WriteIntValue:Void(value:Int)
+		WriteCommaIfNeeded()
 		WriteIndent()
-		If hasTerminator Then
-			WriteObjectStart()
-			
-			If container.namedOnlyContent <> Null Then
-				For Local namedContent := Eachin container.namedOnlyContent
-					WritePropertyStart(namedContent.Key)
-					WriteRuntimeContainer(namedContent.Value, True)
-					WritePropertyEnd()
-				Next
-			End
-			
-			If container.countFlags > 0 Then
-				WriteProperty("#f", container.countFlags)
-			End
-			
-			If container.name <> Null And Not withoutName Then
-				WriteProperty("#n", container.name)
-			End
-			
-			WriteObjectEnd()
-		Else
-			WriteNull()
-		End
-		
-		WriteArrayEnd()
-	End
-	
-	Method WriteDivert:Void(divert:Divert)
-		WriteObjectStart()
-		
-		If divert.targetPathString <> Null Then
-			WriteProperty("->", divert.targetPathString)
-		Else
-			WriteProperty("->", "")
-		End
-		
-		If divert.isExternal Then
-			WriteProperty("externalArgs", divert.externalArgs)
-		End
-		
-		If divert.variableDivertName <> Null Then
-			WriteProperty("var", divert.variableDivertName)
-		End
-		
-		If divert.isConditional Then
-			WriteProperty("c", divert.isConditional)
-		End
-		
-		WriteObjectEnd()
-	End
-	
-	Method WriteTag:Void(tag:Tag)
-		WriteObjectStart()
-		WriteProperty("#", tag.text)
-		WriteObjectEnd()
-	End
-	
-	Method WriteChoice:Void(choice:Choice)
-		WriteObjectStart()
-		
-		WriteProperty("text", choice.text)
-		
-		If choice.targetPath <> Null Then
-			WriteProperty("->", choice.targetPath.ToString())
-		End
-		
-		WriteProperty("index", choice.index)
-		
-		If choice.sourcePath <> Null Then
-			WriteProperty("originalThread", choice.sourcePath.ToString())
-		End
-		
-		WriteObjectEnd()
-	End
-	
-	Method WriteChoicePoint:Void(choicePoint:ChoicePoint)
-		WriteObjectStart()
-		
-		WriteProperty("*", choicePoint.pathStringOnChoice)
-		WriteProperty("flg", choicePoint.flags)
-		
-		WriteObjectEnd()
-	End
-	
-	Method WriteControlCommand:Void(command:ControlCommand)
-		Local controlName:String
-		
-		Select command.commandType
-			Case ControlCommand.CommandType.EvalStart
-				controlName = "ev"
-			Case ControlCommand.CommandType.EvalOutput
-				controlName = "out"
-			Case ControlCommand.CommandType.EvalEnd
-				controlName = "/ev"
-			Case ControlCommand.CommandType.Duplicate
-				controlName = "du"
-			Case ControlCommand.CommandType.PopEvaluatedValue
-				controlName = "pop"
-			Case ControlCommand.CommandType.PopFunction
-				controlName = "~ret"
-			Case ControlCommand.CommandType.PopTunnel
-				controlName = "->->"
-			Case ControlCommand.CommandType.BeginString
-				controlName = "str"
-			Case ControlCommand.CommandType.EndString
-				controlName = "/str"
-			Case ControlCommand.CommandType.NoOp
-				controlName = "nop"
-			Case ControlCommand.CommandType.ChoiceCount
-				controlName = "choiceCnt"
-			Case ControlCommand.CommandType.TurnsSince
-				controlName = "turns"
-			Case ControlCommand.CommandType.ReadCount
-				controlName = "readc"
-			Case ControlCommand.CommandType.Random
-				controlName = "rnd"
-			Case ControlCommand.CommandType.SeedRandom
-				controlName = "srnd"
-			Case ControlCommand.CommandType.VisitIndex
-				controlName = "visit"
-			Case ControlCommand.CommandType.SequenceShuffleIndex
-				controlName = "seq"
-			Case ControlCommand.CommandType.StartThread
-				controlName = "thread"
-			Case ControlCommand.CommandType.Done
-				controlName = "done"
-			Case ControlCommand.CommandType.End
-				controlName = "end"
-			Case ControlCommand.CommandType.ListFromInt
-				controlName = "listInt"
-			Case ControlCommand.CommandType.ListRange
-				controlName = "range"
-			Case ControlCommand.CommandType.ListRandom
-				controlName = "lrnd"
-			Default
-				Error("Unhandled ControlCommand: " + command.commandType)
-		End
-		
-		Write("{\"" + controlName + "\":0}")
-	End
-	
-	Method WriteVariableReference:Void(variableRef:VariableReference)
-		WriteObjectStart()
-		
-		If variableRef.pathStringForCount <> Null Then
-			WriteProperty("CNT?", variableRef.pathStringForCount)
-		Else
-			WriteProperty("VAR?", variableRef.name)
-		End
-		
-		WriteObjectEnd()
-	End
-	
-	Method WriteVariableAssignment:Void(variableAssignment:VariableAssignment)
-		WriteObjectStart()
-		
-		If variableAssignment.isNewDeclaration Then
-			WriteProperty("VAR=", variableAssignment.variableName)
-			WriteProperty("re", True)
-		Else
-			WriteProperty("VAR=", variableAssignment.variableName)
-		End
-		
-		WriteObjectEnd()
-	End
-	
-	Method Write:Void(value:Int)
-		StartNewObject(False)
 		_writer.Write(value)
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
 	End
 	
-	Method Write:Void(value:Float)
-		StartNewObject(False)
+	Method WriteFloatValue:Void(value:Float)
+		WriteCommaIfNeeded()
+		WriteIndent()
 		_writer.Write(value)
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
 	End
 	
-	Method Write:Void(value:String)
-		StartNewObject(False)
+	Method WriteStringValue:Void(value:String)
+		WriteCommaIfNeeded()
+		WriteIndent()
 		_writer.Write("~q" + EscapeString(value) + "~q")
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
 	End
 	
-	Method Write:Void(value:Bool)
-		StartNewObject(False)
+	Method WriteBoolValue:Void(value:Bool)
+		WriteCommaIfNeeded()
+		WriteIndent()
 		_writer.Write(value ? "true" : "false")
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
 	End
 	
-	Method Write:Void(value:Value)
-		If value Is IntValue Then
-			Write(IntValue(value).value)
-		ElseIf value Is FloatValue Then
-			Write(FloatValue(value).value)
-		ElseIf value Is StringValue Then
-			Write(StringValue(value).value)
-		ElseIf value Is BoolValue Then
-			Write(BoolValue(value).value)
-		ElseIf value Is DivertTargetValue Then
-			Local divTarget:DivertTargetValue = DivertTargetValue(value)
-			WriteObjectStart()
-			WriteProperty("^->", divTarget.value)
-			WriteObjectEnd()
-		ElseIf value Is VariablePointerValue Then
-			Local varPtr:VariablePointerValue = VariablePointerValue(value)
-			WriteObjectStart()
-			WriteProperty("^var", varPtr.value)
-			If varPtr.contextIndex <> -1 Then
-				WriteProperty("ci", varPtr.contextIndex)
-			End
-			WriteObjectEnd()
-		ElseIf value Is ListValue Then
-			WriteInkList(ListValue(value).value)
-		Else
-			WriteNull()
-		End
-	End
-	
-	Method WriteInkList:Void(list:InkList)
-		WriteObjectStart()
-		
-		WritePropertyName("list")
-		
-		WriteObjectStart()
-		
-		For Local item := Eachin list
-			Local itemName:String = item.Key.originName
-			If itemName = Null Then
-				itemName = "?"
-			End
-			
-			itemName += "." + item.Key.itemName
-			
-			WritePropertyName(itemName)
-			Write(item.Value)
-			
-			WriteRawText(",")
-		Next
-		
-		WriteObjectEnd()
-		
-		WriteObjectEnd()
-	End
-	
-	Method WriteNull:Void()
-		StartNewObject(False)
+	Method WriteNullValue:Void()
+		WriteCommaIfNeeded()
+		WriteIndent()
 		_writer.Write("null")
+		_isFirstItem.Set(_isFirstItem.Length - 1, False)
+	End
+	
+	Method WriteCommaIfNeeded:Void()
+		If _isFirstItem.Length > 0 And Not _isFirstItem.Top 
+			_writer.Write(",")
+			If _prettyPrint  _writer.Write("~n")
+		End
 	End
 	
 	Method WriteIndent:Void()
-		If _prettyPrint Then
-			_writer.Write("~n")
+		If _prettyPrint 
 			For Local i:Int = 0 Until _indent
-				_writer.Write("    ")
+				_writer.Write("  ")
 			Next
 		End
 	End
 	
-	Method StartNewObject:Void(isContainer:Bool)
-		If _stateObjects.Count > 0 Then
-			If isContainer Then
-				WriteRawText(",")
-			Else
-				If _stateObjects.Last() Then
-					WriteRawText(",")
-				End
-			End
-		End
-		
-		_stateObjects.AddLast(isContainer)
-	End
-	
-	Method WriteRawText:Void(text:String)
-		_writer.Write(text)
-	End
-	
 	Method EscapeString:String(str:String)
-		Local sb:StringBuilder = New StringBuilder()
+		Local sb:= New StringStack()
 		
 		For Local i:Int = 0 Until str.Length
 			Local c:String = str[i..i+1]
@@ -795,6 +826,6 @@ Class SimpleJsonWriter
 			End
 		Next
 		
-		Return sb.ToString()
+		Return sb.Join("")
 	End
 End
