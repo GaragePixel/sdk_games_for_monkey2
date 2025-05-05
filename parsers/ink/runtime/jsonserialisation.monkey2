@@ -45,12 +45,12 @@ Namespace sdk_games.parsers.ink
 '===============================================================================
 #End
 
-' Static class for JSON serialization
+' JSON serialization for Ink runtime objects
 Class JsonSerialisation
 	' Control command name lookup for serialization
 	Field _controlCommandNames:String[]
 	
-	' Constructor initializes control command names
+	' Initialize command mappings
 	Method New()
 		_controlCommandNames = New String[ControlCommand.CommandType.TOTAL_VALUES]
 		
@@ -74,7 +74,7 @@ Class JsonSerialisation
 		_controlCommandNames[ControlCommand.CommandType.SequenceShuffleIndex] = "seq"
 		_controlCommandNames[ControlCommand.CommandType.StartThread] = "thread"
 		_controlCommandNames[ControlCommand.CommandType.Done] = "done"
-		_controlCommandNames[ControlCommand.CommandType.End] = "end"
+		_controlCommandNames[ControlCommand.CommandType.Ends] = "end"
 		_controlCommandNames[ControlCommand.CommandType.ListFromInt] = "listInt"
 		_controlCommandNames[ControlCommand.CommandType.ListRange] = "range"
 		_controlCommandNames[ControlCommand.CommandType.ListRandom] = "lrnd"
@@ -121,21 +121,21 @@ Class JsonSerialisation
 	Method WriteDictionaryRuntimeObjs:Void(writer:SimpleJsonWriter, dictionary:StringMap<RuntimeObject>)
 		writer.WriteObjectStart()
 		
-		For Local keyVal:= Eachin dictionary
-			writer.WritePropertyName(keyVal.Key)
-			WriteRuntimeObject(writer, keyVal.Value)
+		For Local keyValue:= Eachin dictionary
+			writer.WritePropertyName(keyValue.Key)
+			WriteRuntimeObject(writer, keyValue.Value)
 		Next
 		
 		writer.WriteObjectEnd()
 	End
 	
-	' Write an int dictionary to JSON
+	' Write a dictionary of integers to JSON
 	Method WriteIntDictionary:Void(writer:SimpleJsonWriter, dictionary:StringMap<Int>)
 		writer.WriteObjectStart()
 		
-		For Local keyVal:= Eachin dictionary
-			writer.WritePropertyName(keyVal.Key)
-			writer.WriteIntValue(keyVal.Value)
+		For Local keyValue:= Eachin dictionary
+			writer.WritePropertyName(keyValue.Key)
+			writer.WriteInt(keyValue.Value)
 		Next
 		
 		writer.WriteObjectEnd()
@@ -143,10 +143,16 @@ Class JsonSerialisation
 	
 	' Convert a JSON token to a runtime object
 	Method JTokenToRuntimeObject:RuntimeObject(token:JsonValue, storyContext:Story = Null)
+		If token = Null
+			Return Null
+		End
+		
+		' Strings
 		If token.IsString()
 			Return New StringValue(token.AsString())
 		End
 		
+		' Numbers (int or float)
 		If token.IsNumber()
 			Local numStr:String = token.ToString()
 			If numStr.Contains(".")
@@ -156,14 +162,17 @@ Class JsonSerialisation
 			End
 		End
 		
+		' Booleans
 		If token.IsBool()
 			Return New BoolValue(token.AsBool())
 		End
 		
+		' Null
 		If token.IsNull()
 			Return Null
 		End
 		
+		' JSON objects (dictionaries)
 		If token.IsObject()
 			Local obj:JsonObject = token.AsObject()
 			
@@ -195,8 +204,7 @@ Class JsonSerialisation
 				End
 				
 				If obj.Contains("f")
-					Local externalArgs:Int = obj.GetItem("f").AsInt()
-					divert.externalArgs = externalArgs
+					divert.externalArgs = obj.GetItem("f").AsInt()
 				End
 				
 				Return divert
@@ -204,14 +212,14 @@ Class JsonSerialisation
 			
 			' Choice point
 			If obj.Contains("*")
-				Local choice:ChoicePoint = New ChoicePoint()
-				choice.pathStringOnChoice = obj.GetItem("*").AsString()
+				Local choicePoint:ChoicePoint = New ChoicePoint()
+				choicePoint.pathStringOnChoice = obj.GetItem("*").AsString()
 				
 				If obj.Contains("flg")
-					choice.flags = obj.GetItem("flg").AsInt()
+					choicePoint.flags = obj.GetItem("flg").AsInt()
 				End
 				
-				Return choice
+				Return choicePoint
 			End
 			
 			' Variable reference
@@ -257,23 +265,31 @@ Class JsonSerialisation
 			End
 			
 			' Glue
-			If obj.Contains("G<") Return New Glue(Glue.GlueType.Left)
-			If obj.Contains("G>") Return New Glue(Glue.GlueType.Right)
-			If obj.Contains("G=") Return New Glue(Glue.GlueType.Bidirectional)
+			If obj.Contains("G<")
+				Return New Glue(Glue.GlueType.Left)
+			End
+			
+			If obj.Contains("G>")
+				Return New Glue(Glue.GlueType.Right)
+			End
+			
+			If obj.Contains("G=")
+				Return New Glue(Glue.GlueType.Bidirectional)
+			End
 			
 			' Void
 			If obj.Contains("void")
 				Return New Void()
 			End
 			
-			' Native function
+			' Native function call
 			If obj.Contains("^")
 				Local name:String = obj.GetItem("^").AsString()
 				Return NativeFunctionCall.CallWithName(name)
 			End
 			
-			' Control commands - check for each possible command
-			For Local i:Int = 0 Until ControlCommand.CommandType.TOTAL_VALUES
+			' Control commands
+			For Local i:Int = 0 Until _controlCommandNames.Length
 				Local cmdName:String = _controlCommandNames[i]
 				If cmdName <> Null And obj.Contains(cmdName)
 					Return New ControlCommand(i)
@@ -283,9 +299,11 @@ Class JsonSerialisation
 			Error("Failed to parse token: " + token.ToString())
 		End
 		
+		' Arrays
 		If token.IsArray()
 			Local array:JsonArray = token.AsArray()
 			
+			' Empty array = empty container
 			If array.Length = 0
 				Return New Container()
 			End
@@ -326,24 +344,35 @@ Class JsonSerialisation
 	
 	' Write a runtime object to JSON
 	Method WriteRuntimeObject:Void(writer:SimpleJsonWriter, obj:Object)
+		' Handle null case
 		If obj = Null
 			writer.WriteNull()
-		Else If StringValue(obj) <> Null
+			Return
+		End
+		
+		' Value types
+		If StringValue(obj) <> Null
 			writer.WriteString(StringValue(obj).value)
+		
 		Else If IntValue(obj) <> Null
 			writer.WriteInt(IntValue(obj).value)
+		
 		Else If FloatValue(obj) <> Null
 			writer.WriteFloat(FloatValue(obj).value)
+		
 		Else If BoolValue(obj) <> Null
 			writer.WriteBool(BoolValue(obj).value)
+		
 		Else If ListValue(obj) <> Null
 			WriteInkList(writer, ListValue(obj).value)
+		
 		Else If DivertTargetValue(obj) <> Null
 			Local divTarget:DivertTargetValue = DivertTargetValue(obj)
 			writer.WriteObjectStart()
 			writer.WritePropertyName("^->")
 			writer.WriteString(divTarget.value.ToString())
 			writer.WriteObjectEnd()
+		
 		Else If VariablePointerValue(obj) <> Null
 			Local varPtr:VariablePointerValue = VariablePointerValue(obj)
 			writer.WriteObjectStart()
@@ -354,41 +383,60 @@ Class JsonSerialisation
 				writer.WriteInt(varPtr.contextIndex)
 			End
 			writer.WriteObjectEnd()
+		
+		' Special runtime objects
 		Else If Void(obj) <> Null
 			writer.WriteObjectStart()
 			writer.WritePropertyName("void")
 			writer.WriteInt(0)
 			writer.WriteObjectEnd()
+		
 		Else If Divert(obj) <> Null
 			WriteDivert(writer, Divert(obj))
+		
 		Else If ControlCommand(obj) <> Null
 			WriteControlCommand(writer, ControlCommand(obj))
+		
 		Else If VariableReference(obj) <> Null
 			WriteVariableReference(writer, VariableReference(obj))
+		
 		Else If VariableAssignment(obj) <> Null
 			WriteVariableAssignment(writer, VariableAssignment(obj))
+		
 		Else If ChoicePoint(obj) <> Null
 			WriteChoicePoint(writer, ChoicePoint(obj))
+		
 		Else If Container(obj) <> Null
 			WriteRuntimeContainer(writer, Container(obj))
+		
 		Else If Glue(obj) <> Null
 			WriteGlue(writer, Glue(obj))
+		
 		Else If Choice(obj) <> Null
 			WriteChoice(writer, Choice(obj))
+		
 		Else If Tag(obj) <> Null
 			WriteTag(writer, Tag(obj))
+		
 		Else If NativeFunctionCall(obj) <> Null
 			WriteNativeFunctionCall(writer, NativeFunctionCall(obj))
+		
+		' Native types
 		Else If String(obj) <> Null
 			writer.WriteString(String(obj))
+		
 		Else If Int(obj) <> Null
 			writer.WriteInt(Int(obj))
+		
 		Else If Float(obj) <> Null
 			writer.WriteFloat(Float(obj))
+		
 		Else If Bool(obj) <> Null
 			writer.WriteBool(Bool(obj))
+		
 		Else If InkList(obj) <> Null
 			WriteInkList(writer, InkList(obj))
+		
 		Else
 			Error("Failed to write object of type: " + obj.ToString())
 		End
@@ -398,17 +446,20 @@ Class JsonSerialisation
 	Method WriteRuntimeContainer:Void(writer:SimpleJsonWriter, container:Container, withoutName:Bool = False)
 		writer.WriteArrayStart()
 		
+		' Write container content
 		For Local content:RuntimeObject = Eachin container.content
 			WriteRuntimeObject(writer, content)
 		Next
 		
+		' Check if container has terminator object
 		Local hasTerminator:Bool = container.namedOnlyContent <> Null Or 
-			container.countFlags > 0 Or 
-			(container.name <> Null And Not withoutName)
+								   container.countFlags > 0 Or 
+								   (container.name <> Null And Not withoutName)
 		
 		If hasTerminator
 			writer.WriteObjectStart()
 			
+			' Write named content
 			If container.namedOnlyContent <> Null
 				For Local namedContent:= Eachin container.namedOnlyContent
 					writer.WritePropertyName(namedContent.Key)
@@ -416,11 +467,13 @@ Class JsonSerialisation
 				Next
 			End
 			
+			' Write count flags
 			If container.countFlags > 0
 				writer.WritePropertyName("#f")
 				writer.WriteInt(container.countFlags)
 			End
 			
+			' Write container name
 			If container.name <> Null And Not withoutName
 				writer.WritePropertyName("#n")
 				writer.WriteString(container.name)
@@ -439,7 +492,11 @@ Class JsonSerialisation
 		writer.WriteObjectStart()
 		
 		writer.WritePropertyName("->")
-		writer.WriteString(divert.targetPathString)
+		If divert.targetPathString <> Null
+			writer.WriteString(divert.targetPathString)
+		Else
+			writer.WriteString("")
+		End
 		
 		If divert.isConditional
 			writer.WritePropertyName("c")
@@ -461,11 +518,9 @@ Class JsonSerialisation
 	
 	' Write a control command to JSON
 	Method WriteControlCommand:Void(writer:SimpleJsonWriter, command:ControlCommand)
-		Local commandName:String = _controlCommandNames[command.commandType]
-		
 		writer.WriteObjectStart()
-		writer.WritePropertyName(commandName)
-		writer.WriteInt(0)
+		writer.WritePropertyName(_controlCommandNames[command.commandType])
+		writer.WriteInt(0) ' Value doesn't matter for control commands
 		writer.WriteObjectEnd()
 	End
 	
@@ -555,20 +610,16 @@ Class JsonSerialisation
 	' Write a native function call to JSON
 	Method WriteNativeFunctionCall:Void(writer:SimpleJsonWriter, nativeFunc:NativeFunctionCall)
 		writer.WriteObjectStart()
-		
 		writer.WritePropertyName("^")
 		writer.WriteString(nativeFunc.name)
-		
 		writer.WriteObjectEnd()
 	End
 	
 	' Write a tag to JSON
 	Method WriteTag:Void(writer:SimpleJsonWriter, tag:Tag)
 		writer.WriteObjectStart()
-		
 		writer.WritePropertyName("#")
 		writer.WriteString(tag.text)
-		
 		writer.WriteObjectEnd()
 	End
 	
@@ -577,169 +628,189 @@ Class JsonSerialisation
 		writer.WriteObjectStart()
 		
 		writer.WritePropertyName("list")
-		
 		writer.WriteObjectStart()
 		
 		For Local itemAndValue:= Eachin list
 			Local item:InkListItem = itemAndValue.Key
 			Local value:Int = itemAndValue.Value
 			
-			Local itemName:String = item.originName
-			If itemName = Null
-				itemName = "?"
+			Local itemOriginName:String = item.originName
+			If itemOriginName = Null
+				itemOriginName = "?"
 			End
 			
-			Local fullItemName:String = itemName + "." + item.itemName
+			Local fullName:String = itemOriginName + "." + item.itemName
 			
-			writer.WritePropertyName(fullItemName)
+			writer.WritePropertyName(fullName)
 			writer.WriteInt(value)
 		Next
 		
 		writer.WriteObjectEnd()
-		
 		writer.WriteObjectEnd()
 	End
 End
 
-' SimpleJsonWriter for writing JSON data
+' SimpleJsonWriter for serializing to JSON format
 Class SimpleJsonWriter
-	' The underlying StringWriter for output
+	' Underlying string writer
 	Field _writer:StringWriter = New StringWriter()
 	
-	' Track state for proper comma placement
+	' State tracking
 	Field _stateStack:Stack<Int> = New Stack<Int>()
-	Field _currentState:Int
+	Field _currentStateIndex:Int = -1
+	Field _state:Int = 0
 	
 	' Constants for state tracking
-	Const _inObject:Int = 1
-	Const _inArray:Int = 2
+	Const STATE_NONE:Int = 0
+	Const STATE_OBJECT:Int = 1
+	Const STATE_ARRAY:Int = 2
 	
-	' Indentation management
-	Field _currentIndentation:Int = 0
+	' State for comma tracking
+	Field _commaRequired:Bool = False
+	
+	' Indentation tracking
+	Field _indentLevel:Int = 0
 	Field _prettyPrint:Bool = False
 	
-	' Writer creation with optional pretty printing
+	' Constructor
 	Method New(prettyPrint:Bool = False)
 		_prettyPrint = prettyPrint
+		_stateStack.Push(STATE_NONE)
 	End
 	
 	' Generate the JSON string
 	Method ToString:String() Override
 		Return _writer.ToString()
 	End
-
-	' Objects
+	
+	' Object start
 	Method WriteObjectStart:Void()
-		WriteComma()
+		WriteCommaIfNeeded()
 		_writer.Write("{")
 		
-		PushState(_inObject)
-		_currentIndentation += 1
-		WriteNewlineAndIndent()
+		PushState(STATE_OBJECT)
+		_indentLevel += 1
+		
+		If _prettyPrint
+			_writer.Write("~n")
+		End
 	End
 	
+	' Object end
 	Method WriteObjectEnd:Void()
-		_currentIndentation -= 1
-		WriteNewlineAndIndent()
-		_writer.Write("}")
+		_indentLevel -= 1
 		
+		If _prettyPrint
+			_writer.Write("~n")
+			WriteIndent()
+		End
+		
+		_writer.Write("}")
 		PopState()
 	End
 	
-	' Arrays
+	' Array start
 	Method WriteArrayStart:Void()
-		WriteComma()
+		WriteCommaIfNeeded()
 		_writer.Write("[")
 		
-		PushState(_inArray)
-		_currentIndentation += 1
-		WriteNewlineAndIndent()
+		PushState(STATE_ARRAY)
+		_indentLevel += 1
+		
+		If _prettyPrint
+			_writer.Write("~n")
+		End
 	End
 	
+	' Array end
 	Method WriteArrayEnd:Void()
-		_currentIndentation -= 1
-		WriteNewlineAndIndent()
-		_writer.Write("]")
+		_indentLevel -= 1
 		
+		If _prettyPrint
+			_writer.Write("~n")
+			WriteIndent()
+		End
+		
+		_writer.Write("]")
 		PopState()
 	End
 	
-	' Properties
+	' Write property name
 	Method WritePropertyName:Void(name:String)
-		WriteComma()
-		WriteNewlineAndIndent()
+		WriteCommaIfNeeded()
+		
+		If _prettyPrint
+			_writer.Write("~n")
+			WriteIndent()
+		End
 		
 		_writer.Write("~q" + EscapeString(name) + "~q:")
+		
 		If _prettyPrint
 			_writer.Write(" ")
 		End
 		
-		_inPreviousItemField = True
+		_commaRequired = False
 	End
 	
-	' Values
+	' Write null value
 	Method WriteNull:Void()
-		WriteComma()
-		WriteNewlineAndIndent()
+		WriteCommaIfNeeded()
 		_writer.Write("null")
-		_inPreviousItemField = False
 	End
 	
-	Method WriteInt:Void(val:Int)
-		WriteComma()
-		WriteNewlineAndIndent()
-		_writer.Write(String(val))
-		_inPreviousItemField = False
+	' Write integer value
+	Method WriteInt:Void(value:Int)
+		WriteCommaIfNeeded()
+		_writer.Write(String(value))
 	End
 	
-	Method WriteFloat:Void(val:Float)
-		WriteComma()
-		WriteNewlineAndIndent()
-		_writer.Write(String(val))
-		_inPreviousItemField = False
+	' Write float value
+	Method WriteFloat:Void(value:Float)
+		WriteCommaIfNeeded()
+		_writer.Write(String(value))
 	End
 	
-	Method WriteString:Void(val:String)
-		WriteComma()
-		WriteNewlineAndIndent()
-		_writer.Write("~q" + EscapeString(val) + "~q")
-		_inPreviousItemField = False
+	' Write string value
+	Method WriteString:Void(value:String)
+		WriteCommaIfNeeded()
+		_writer.Write("~q" + EscapeString(value) + "~q")
 	End
 	
-	Method WriteBool:Void(val:Bool)
-		WriteComma()
-		WriteNewlineAndIndent()
-		_writer.Write(val ? "true" : "false")
-		_inPreviousItemField = False
+	' Write boolean value
+	Method WriteBool:Void(value:Bool)
+		WriteCommaIfNeeded()
+		_writer.Write(value ? "true" : "false")
 	End
 	
-	' Internal helper for state tracking
+	' Push state onto the stack
 	Method PushState:Void(state:Int)
-		_stateStack.Push(_currentState)
-		_currentState = state
-		_inPreviousItemField = False
+		_stateStack.Push(state)
+		_state = state
+		_commaRequired = False
 	End
 	
+	' Pop state from the stack
 	Method PopState:Void()
-		_currentState = _stateStack.Pop()
+		_stateStack.Pop()
+		_state = _stateStack.Top()
+		_commaRequired = True
 	End
 	
-	' Internal helpers for formatting and commas
-	Field _inPreviousItemField:Bool = False
-	
-	Method WriteComma:Void()
-		If _inPreviousItemField
+	' Write comma if needed
+	Method WriteCommaIfNeeded:Void()
+		If _commaRequired
 			_writer.Write(",")
+		Else
+			_commaRequired = True
 		End
 	End
 	
-	Method WriteNewlineAndIndent:Void()
-		If _prettyPrint
-			_writer.Write("~n")
-			For Local i:Int = 0 Until _currentIndentation
-				_writer.Write("    ")
-			Next
-		End
+	' Write indentation
+	Method WriteIndent:Void()
+		For Local i:Int = 0 Until _indentLevel
+			_writer.Write("	")
+		Next
 	End
 	
 	' Escape special characters in strings
