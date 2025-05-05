@@ -103,11 +103,11 @@ Class CallStack
 		End
 
 		' Constructor: Initializes from JSON
-		Method New(jThreadObj:Map<String,Object>, storyContext:Story)
+		Method New(jThreadObj:Map<String,RuntimeObject>, storyContext:Story)
 			_threadIndex = Int(jThreadObj["threadIndex"])
-			Local jThreadCallstack:List<Object> = List<Object>(jThreadObj["callstack"])
-			For Local jElTok:Object = Eachin jThreadCallstack
-				Local jElementObj:Map<String,Object> = Map<String,Object>(jElTok)
+			Local jThreadCallstack:List<RuntimeObject> = List<RuntimeObject>(jThreadObj["callstack"])
+			For Local jElTok:RuntimeObject = Eachin jThreadCallstack
+				Local jElementObj:Map<String,RuntimeObject> = Map<String,RuntimeObject>(jElTok)
 				Local pushPopType:PushPopType = PushPopType(Int(jElementObj["type"]))
 				Local pointer:Pointer = Pointer.Nil
 				If jElementObj.ContainsKey("cPath")
@@ -127,7 +127,7 @@ Class CallStack
 				End
 				Local el := New Element(pushPopType, pointer, Bool(jElementObj["exp"]))
 				If jElementObj.ContainsKey("temp")
-					el._temporaryVariables = Json.JObjectToDictionaryRuntimeObjs(Map<String,Object>(jElementObj["temp"]))
+					el._temporaryVariables = Json.JObjectToDictionaryRuntimeObjs(Map<String,RuntimeObject>(jElementObj["temp"]))
 				Else
 					el._temporaryVariables.Clear()
 				End
@@ -148,6 +148,146 @@ Class CallStack
 			Next
 			copy._previousPointer = _previousPointer
 			Return copy
+		End
+
+		' Serialize this thread to JSON
+		Method WriteJson:Void(writer:SimpleJsonWriter, storyContext:Story)
+			writer.WriteObjectStart()
+			
+			' Thread index
+			writer.WritePropertyName("threadIndex")
+			writer.Write(threadIndex)
+			
+			' Callstack
+			writer.WritePropertyName("callstack")
+			writer.WriteArrayStart()
+			
+			For Local el := Eachin _callstack
+				writer.WriteObjectStart()
+				
+				' Current content path
+				writer.WritePropertyName("cPath")
+				writer.WriteObjectStart()
+				
+				writer.WritePropertyName("c")
+				writer.Write(storyContext.ContentPathToPathString(el.currentContainer.path))
+				
+				writer.WritePropertyName("i")
+				writer.Write(el.currentContentIndex)
+				
+				writer.WriteObjectEnd()
+				
+				' Push/pop type
+				writer.WritePropertyName("type")
+				writer.Write(Int(el.type))
+				
+				' Whether we're in temporary evaluation
+				writer.WritePropertyName("temp")
+				writer.Write(el.inExpressionEvaluation)
+				
+				' Evaluation stack height
+				writer.WritePropertyName("ev")
+				writer.Write(el.evaluationStackHeight)
+				
+				' Temporary variables
+				If el._temporaryVariables <> Null And el._temporaryVariables.Count > 0 Then
+					writer.WritePropertyName("tempVars")
+					writer.WriteObjectStart()
+					
+					For Local keyValue := Eachin el._temporaryVariables
+						writer.WritePropertyName(keyValue.Key)
+						
+						Local val:Object = keyValue.Value
+						If val = Null Then
+							writer.WriteNull()
+						Else
+							writer.WriteRuntimeObject(val)
+						End
+					Next
+					
+					writer.WriteObjectEnd()
+				End
+				
+				writer.WriteObjectEnd()
+			Next
+			
+			writer.WriteArrayEnd()
+			
+			' Previous content object path
+			If previousContentObject <> Null Then
+				writer.WritePropertyName("previousContentObject")
+				writer.WriteObjectStart()
+				
+				writer.WritePropertyName("c")
+				writer.Write(storyContext.ContentPathToPathString(previousContentObject.path))
+				
+				writer.WriteObjectEnd()
+			End
+			
+			writer.WriteObjectEnd()
+		End
+		
+		' Load thread state from JSON
+		Method LoadJson:Thread(jThreadObj:JsonObject, storyContext:Story)
+			' Thread index
+			threadIndex = jThreadObj.GetItem("threadIndex").AsInt()
+			
+			' Callstack
+			Local jThreadCallstack:JsonArray = jThreadObj.GetItem("callstack").AsArray()
+			_callstack = New Stack<Element>()
+			
+			For Local jElTok := Eachin jThreadCallstack
+				Local jElementObj:JsonObject = jElTok.AsObject()
+				
+				' Current container
+				Local jPathObj:JsonObject = jElementObj.GetItem("cPath").AsObject()
+				Local currentContainerPathStr:String = jPathObj.GetItem("c").AsString()
+				Local currentContentIdx:Int = jPathObj.GetItem("i").AsInt()
+				
+				Local threadElement:Element = Null
+				
+				Local currentContainer:Container = Container(storyContext.ContentAtPath(New Path(currentContainerPathStr)).obj)
+				
+				If currentContainer = Null Then
+					Error("Could not find container for path: " + currentContainerPathStr)
+					Return Null
+				End
+				
+				' Create Element
+				Local pushPopType:PushPopType = PushPopType(jElementObj.GetItem("type").AsInt())
+				threadElement = New Element(pushPopType, currentContainer, currentContentIdx)
+				
+				' Expression evaluation flag
+				threadElement.inExpressionEvaluation = jElementObj.GetItem("temp").AsBool()
+				
+				' Evaluation stack height
+				If jElementObj.ContainsKey("ev") Then
+					threadElement.evaluationStackHeight = jElementObj.GetItem("ev").AsInt()
+				End
+				
+				' Temporary variables
+				If jElementObj.ContainsKey("tempVars") Then
+					Local jVarObj:JsonObject = jElementObj.GetItem("tempVars").AsObject()
+					threadElement._temporaryVariables = New StringMap<RuntimeObject>()
+					
+					For Local varName := Eachin jVarObj.Keys
+						Local jVarVal:JsonValue = jVarObj.GetItem(varName)
+						Local varValue:RuntimeObject = storyContext.JsonValueToRuntimeObject(jVarVal)
+						threadElement._temporaryVariables.Set(varName, varValue)
+					Next
+				End
+				
+				_callstack.Push(threadElement)
+			Next
+			
+			' Previous content object
+			If jThreadObj.ContainsKey("previousContentObject") Then
+				Local prevContentObjPath:JsonObject = jThreadObj.GetItem("previousContentObject").AsObject()
+				Local prevPath:String = prevContentObjPath.GetItem("c").AsString()
+				previousContentObject = storyContext.ContentAtPath(New Path(prevPath)).obj
+			End
+			
+			Return Self
 		End
 	End
 
@@ -175,6 +315,24 @@ Class CallStack
 		element._evaluationStackHeightWhenPushed = externalEvaluationStackHeight
 		element._functionStartInOutputStream = outputStreamLengthWithPushed
 		_callStack.Add(element)
+	End
+	
+	' Pop an Element from the stack
+	Method Pop:PushPopType(popType:PushPopType = Null)
+		If Self.elements.Count = 0 Then
+			Error("Trying to pop an empty stack")
+			Return Null
+		End
+		
+		Local element:Element = _current.callstack.Pop()
+		
+		' Potentially restore the evaluation stack height that was created
+		' during function evaluation
+		If popType = Null Then
+			popType = element.type
+		End
+		
+		Return popType
 	End
 
 	' Property: Retrieves the current thread
@@ -208,6 +366,55 @@ Class CallStack
 			Next
 		Next
 		Return sb.ToString()
+	End
+
+	' Serialize this CallStack to JSON
+	Method WriteJson:Void(writer:SimpleJsonWriter)
+		writer.WriteObjectStart()
+		
+		' Threads
+		writer.WritePropertyName("threads")
+		writer.WriteArrayStart()
+		
+		For Local thread := Eachin _threads
+			thread.WriteJson(writer, _story)
+		Next
+		
+		writer.WriteArrayEnd()
+		
+		' Current thread index
+		writer.WritePropertyName("threadIndex")
+		writer.Write(_threads.IndexOf(_current))
+		
+		' Thread counter
+		writer.WritePropertyName("threadCounter")
+		writer.Write(_threadCounter)
+		
+		writer.WriteObjectEnd()
+	End
+	
+	' Load CallStack state from JSON
+	Method LoadJson:CallStack(jObject:JsonObject)
+		_threads.Clear()
+		
+		' Load threads
+		Local jThreads:JsonArray = jObject.GetItem("threads").AsArray()
+		
+		For Local jThreadTok := Eachin jThreads
+			Local jThreadObj:JsonObject = jThreadTok.AsObject()
+			Local thread:Thread = New Thread(0)
+			thread = thread.LoadJson(jThreadObj, _story)
+			_threads.AddLast(thread)
+		Next
+		
+		' Set current thread
+		Local currentThreadIndex:Int = jObject.GetItem("threadIndex").AsInt()
+		_current = _threads[currentThreadIndex]
+		
+		' Set thread counter
+		_threadCounter = jObject.GetItem("threadCounter").AsInt()
+		
+		Return Self
 	End
 
 	' Property: Retrieves the call stack elements
